@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head th:fragment="head(title)">
+    <meta charset="UTF-8"/>
+    <title th:text="${title}">Processes</title>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.23/dist/full.min.css" rel="stylesheet" type="text/css" />
+    <link rel="stylesheet" href="/css/brand.css" />
+    <link rel="icon" href="/img/favicon.png" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/htmx.org@2.0.3"></script>
+</head>
+<body>
+<div th:fragment="alerts">
+    <div th:if="${flash}" class="alert alert-success py-2"><span th:text="${flash}"></span></div>
+    <div th:if="${error}" class="alert alert-error py-2"><span th:text="${error}"></span></div>
+</div>
+<span th:fragment="status(status)" class="badge badge-sm"
+      th:classappend="${status == 'SUCCESS'} ? 'badge-success' : (${status == 'FAILURE'} ? 'badge-error' : (${status == 'RUNNING'} ? 'badge-info' : (${status == 'QUEUED' or status == 'PENDING'} ? 'badge-ghost' : 'badge-warning')))"
+      th:text="${status}"></span>
+</body>
+</html>

@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org" data-theme="sdmxdw">
+<head th:replace="~{process/fragments/head :: head('Git')}"></head>
+<body class="min-h-screen bg-base-200">
+<div th:replace="~{fragments/nav :: nav}"></div>
+<div class="p-8 space-y-6 max-w-4xl" th:with="c=${status.config}">
+    <div>
+        <p class="text-sm"><a class="link" th:href="@{/processes}">Processes</a></p>
+        <h1 class="text-2xl font-bold">Git repository</h1>
+        <p class="text-sm opacity-70">The process folder can be a sub-folder of a Git repository. Saving in the app commits
+            (with you as author) and pushes; changes made in an IDE come in with <b>Pull</b>. Every run records the commit it ran with.
+            Process metadata (steps, schedules, parameters) stays in the database.</p>
+    </div>
+    <div th:replace="~{process/fragments/head :: alerts}"></div>
+
+    <div class="card bg-base-100 shadow-xl p-6" th:if="${status.head != null or c != null}">
+        <h2 class="font-bold mb-2">Status</h2>
+        <table class="table table-sm w-fit">
+            <tr><td>Repository</td><td class="font-mono" th:text="${c.repoUrl}"></td></tr>
+            <tr><td>Branch / folder</td><td class="font-mono" th:text="${c.branch} + ' : ' + ${c.subFolder} + '/'"></td></tr>
+            <tr><td>Current commit</td><td><span class="font-mono" th:text="${status.head} ? ${#strings.substring(status.head, 0, 8)} : '(none)'"></span>
+                <span class="opacity-70" th:text="${status.headMessage}"></span></td></tr>
+            <tr><td>Last action</td><td th:text="${c.lastMessage} ?: '-'"></td></tr>
+            <tr th:if="${c.lastPullAt}"><td>Last pull</td><td th:text="${#temporals.format(c.lastPullAt, 'yyyy-MM-dd HH:mm')}"></td></tr>
+        </table>
+        <div class="flex flex-wrap gap-2 mt-3">
+            <form method="post" th:action="@{/processes/git/pull}"><button class="btn btn-sm btn-primary" type="submit">Pull</button></form>
+            <form method="post" th:action="@{/processes/git/reset}" onsubmit="return confirm('Discard local commits and changes that were not pushed?')">
+                <button class="btn btn-sm btn-warning btn-outline" type="submit">Reset to remote</button></form>
+            <form method="post" th:action="@{/processes/git/disconnect}" onsubmit="return confirm('Unlink the repository? The code is copied back into the local process folder.')">
+                <button class="btn btn-sm btn-error btn-outline" type="submit">Unlink</button></form>
+        </div>
+    </div>
+
+    <form class="card bg-base-100 shadow-xl p-6 space-y-3" method="post" th:action="@{/processes/git}" autocomplete="off">
+        <h2 class="font-bold" th:text="${c == null} ? 'Link a repository' : 'Change link'"></h2>
+        <label class="form-control"><span class="label-text text-sm">Repository URL (HTTPS, e.g. https://github.com/org/repo.git)</span>
+            <input class="input input-bordered input-sm font-mono" name="repoUrl" th:value="${c?.repoUrl}" required/></label>
+        <div class="grid md:grid-cols-2 gap-3">
+            <label class="form-control"><span class="label-text text-sm">Branch</span>
+                <input class="input input-bordered input-sm font-mono" name="branch" th:value="${c?.branch} ?: 'main'"/></label>
+            <label class="form-control"><span class="label-text text-sm">Sub-folder in the repository</span>
+                <input class="input input-bordered input-sm font-mono" name="subFolder" th:value="${c?.subFolder} ?: 'processes'"/></label>
+            <label class="form-control"><span class="label-text text-sm">User name (GitHub: empty)</span>
+                <input class="input input-bordered input-sm" name="username" th:value="${c?.username}"/></label>
+            <label class="form-control"><span class="label-text text-sm" th:text="${c != null and c.hasToken} ? 'Access token (stored - leave empty to keep)' : 'Access token (write access to this repository only)'"></span>
+                <input class="input input-bordered input-sm font-mono" type="password" name="token" autocomplete="new-password"/></label>
+        </div>
+        <p class="text-xs opacity-70">Linking clones the repository. Process folders that do not exist in the sub-folder yet are added in one commit
+            and pushed; existing ones in the repository are used as they are.</p>
+        <button class="btn btn-primary btn-sm w-fit" type="submit" th:text="${c == null} ? 'Link' : 'Re-link'"></button>
+    </form>
+</div>
+</body>
+</html>

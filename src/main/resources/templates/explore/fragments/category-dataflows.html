@@ -1,0 +1,13 @@
+<div xmlns:th="http://www.thymeleaf.org" class="space-y-1">
+    <p th:if="${#lists.isEmpty(dataflows)}" class="text-xs opacity-60">No dataflows</p>
+    <details th:each="df : ${dataflows}"
+              th:attr="hx-get=@{/explore/dataflows/{id}/series-fragment(id=${df.id})},hx-trigger='toggle once',hx-target='find .series-slot',hx-swap='innerHTML'">
+        <summary class="cursor-pointer text-sm">
+            <span th:text="${df.artefactId}"></span>
+            <span class="opacity-70" th:text="'- ' + ${df.name}"></span>
+        </summary>
+        <div class="series-slot pl-4 mt-1">
+            <span class="loading loading-spinner loading-xs"></span>
+        </div>
+    </details>
+</div>

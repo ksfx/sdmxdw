@@ -1,0 +1,159 @@
+openapi: 3.1.0
+info:
+  title: SDMxDW read API
+  version: "1.0"
+  description: |
+    Read access to SDMxDW for scripts. Time series follow the SDMX REST API (2.1 and 3.0 paths),
+    microdata a REST API with the same conventions. Authenticate with a personal API token
+    (Profile -> API tokens) as `Authorization: Bearer sdw_...`. Published (Beta) data for every
+    user; `stage=ALPHA` only for Datenmanager.
+servers:
+  - url: /rest
+security:
+  - bearerToken: []
+  - basicToken: []
+components:
+  securitySchemes:
+    bearerToken:
+      type: http
+      scheme: bearer
+    basicToken:
+      type: http
+      scheme: basic
+      description: Any user name, the API token as password.
+  parameters:
+    agency: {name: agency, in: path, required: true, schema: {type: string}, description: "Agency id, 'all'/'*' or several joined with '+' or ','. 'SDMXDW' = all agencies."}
+    id: {name: id, in: path, required: true, schema: {type: string}, description: "Artefact id or 'all'/'*'."}
+    version: {name: version, in: path, required: true, schema: {type: string}, description: "Version, 'latest'/'~' or 'all'/'*'."}
+    references: {name: references, in: query, schema: {type: string, enum: [none, parents, parentsandsiblings, children, descendants, all, dataflow, datastructure, codelist, conceptscheme, categoryscheme, categorisation]}}
+    flowRef: {name: flowRef, in: path, required: true, schema: {type: string}, description: "ID, AGENCY,ID or AGENCY,ID,VERSION"}
+    key: {name: key, in: path, required: true, schema: {type: string}, description: "Dot-separated key, '+' = or, empty segment = all, 'all' = everything."}
+    asOf: {name: asOf, in: query, schema: {type: string}, description: "Vintage: yyyy-MM-dd (end of day UTC), yyyy-MM-ddTHH:mm (UTC) or ISO instant."}
+    stage: {name: stage, in: query, schema: {type: string, enum: [BETA, ALPHA], default: BETA}, description: "ALPHA requires the Datenmanager role (403 otherwise)."}
+    startPeriod: {name: startPeriod, in: query, schema: {type: string}}
+    endPeriod: {name: endPeriod, in: query, schema: {type: string}}
+    firstN: {name: firstNObservations, in: query, schema: {type: integer, minimum: 0}}
+    lastN: {name: lastNObservations, in: query, schema: {type: integer, minimum: 0}}
+    detail: {name: detail, in: query, schema: {type: string, enum: [full, dataonly, serieskeysonly, nodata]}}
+    dataFormat: {name: format, in: query, schema: {type: string, enum: [genericxml, xml, csv, json]}, description: "Alternative to the Accept header."}
+    sdmxVersion: {name: sdmxVersion, in: query, schema: {type: string, enum: ["2.1", "3.0"]}, description: "Picks the SDMX version of xml/csv output."}
+    reportingPeriod: {name: reportingPeriod, in: query, schema: {type: string}, description: "Comma-separated periods or 'latest'."}
+    fieldFilter: {name: "c[FIELD]", in: query, schema: {type: string}, description: "Accepted values of a field, comma-separated; replace FIELD with the field code."}
+    limit: {name: limit, in: query, schema: {type: integer, minimum: 0}, description: "Records per page."}
+    offset: {name: offset, in: query, schema: {type: integer, minimum: 0}}
+    microFormat: {name: format, in: query, schema: {type: string, enum: [csv, json, parquet], default: csv}}
+  responses:
+    structure:
+      description: SDMX-ML structure message (2.1 on 2.1 paths, 3.0 on 3.0 paths)
+      content:
+        application/vnd.sdmx.structure+xml;version=2.1: {schema: {type: string}}
+        application/vnd.sdmx.structure+xml;version=3.0.0: {schema: {type: string}}
+    data:
+      description: SDMX data message
+      content:
+        application/vnd.sdmx.genericdata+xml;version=2.1: {schema: {type: string}}
+        application/vnd.sdmx.structurespecificdata+xml;version=2.1: {schema: {type: string}}
+        application/vnd.sdmx.data+xml;version=3.0.0: {schema: {type: string}}
+        application/vnd.sdmx.data+csv;version=2.0.0: {schema: {type: string}}
+        application/vnd.sdmx.data+csv;version=1.0.0: {schema: {type: string}}
+        application/vnd.sdmx.data+json;version=1.0.0: {schema: {type: object}}
+    table:
+      description: Microdata table; headers X-Total-Count and Link (rel="next") when paging
+      content:
+        application/vnd.sdmx.data+csv;version=2.0.0: {schema: {type: string}}
+        application/json: {schema: {type: object}}
+        application/vnd.apache.parquet: {schema: {type: string, format: binary}}
+    unauthorized: {description: "Missing, invalid, revoked or expired token"}
+    forbidden: {description: "stage=ALPHA without Datenmanager role"}
+    notFound: {description: No results found}
+paths:
+  /{type}/{agency}/{id}/{version}:
+    get:
+      summary: Structure query (SDMX 2.1 style)
+      parameters:
+        - {name: type, in: path, required: true, schema: {type: string, enum: [dataflow, datastructure, codelist, conceptscheme, categoryscheme, categorisation]}}
+        - $ref: '#/components/parameters/agency'
+        - $ref: '#/components/parameters/id'
+        - $ref: '#/components/parameters/version'
+        - $ref: '#/components/parameters/references'
+      responses: {'200': {$ref: '#/components/responses/structure'}, '401': {$ref: '#/components/responses/unauthorized'}, '404': {$ref: '#/components/responses/notFound'}}
+  /structure/{type}/{agency}/{id}/{version}:
+    get:
+      summary: Structure query (SDMX 3.0 style)
+      parameters:
+        - {name: type, in: path, required: true, schema: {type: string, enum: ['*', dataflow, datastructure, codelist, conceptscheme, categoryscheme, categorisation]}}
+        - $ref: '#/components/parameters/agency'
+        - $ref: '#/components/parameters/id'
+        - $ref: '#/components/parameters/version'
+        - $ref: '#/components/parameters/references'
+      responses: {'200': {$ref: '#/components/responses/structure'}, '401': {$ref: '#/components/responses/unauthorized'}, '404': {$ref: '#/components/responses/notFound'}}
+  /data/{flowRef}/{key}:
+    get:
+      summary: Time series data (SDMX 2.1 style)
+      parameters:
+        - $ref: '#/components/parameters/flowRef'
+        - $ref: '#/components/parameters/key'
+        - $ref: '#/components/parameters/startPeriod'
+        - $ref: '#/components/parameters/endPeriod'
+        - $ref: '#/components/parameters/asOf'
+        - $ref: '#/components/parameters/firstN'
+        - $ref: '#/components/parameters/lastN'
+        - $ref: '#/components/parameters/detail'
+        - $ref: '#/components/parameters/stage'
+        - $ref: '#/components/parameters/dataFormat'
+        - $ref: '#/components/parameters/sdmxVersion'
+      responses: {'200': {$ref: '#/components/responses/data'}, '400': {description: Invalid key or parameter}, '401': {$ref: '#/components/responses/unauthorized'}, '403': {$ref: '#/components/responses/forbidden'}, '404': {$ref: '#/components/responses/notFound'}}
+  /data/dataflow/{agency}/{id}/{version}/{key}:
+    get:
+      summary: Time series data (SDMX 3.0 style)
+      parameters:
+        - $ref: '#/components/parameters/agency'
+        - $ref: '#/components/parameters/id'
+        - $ref: '#/components/parameters/version'
+        - $ref: '#/components/parameters/key'
+        - {name: "c[DIM]", in: query, schema: {type: string}, description: "Component filter, e.g. c[FREQ]=Q,M or c[TIME_PERIOD]=ge:2020-Q1+le:2024-Q4"}
+        - $ref: '#/components/parameters/asOf'
+        - $ref: '#/components/parameters/firstN'
+        - $ref: '#/components/parameters/lastN'
+        - $ref: '#/components/parameters/detail'
+        - $ref: '#/components/parameters/stage'
+        - $ref: '#/components/parameters/dataFormat'
+      responses: {'200': {$ref: '#/components/responses/data'}, '401': {$ref: '#/components/responses/unauthorized'}, '403': {$ref: '#/components/responses/forbidden'}, '404': {$ref: '#/components/responses/notFound'}}
+  /microdata:
+    get:
+      summary: Catalog of microdata flows
+      responses: {'200': {description: List of flows, content: {application/json: {schema: {type: array, items: {type: object}}}}}, '401': {$ref: '#/components/responses/unauthorized'}}
+  /microdata/{flowRef}/structure:
+    get:
+      summary: Field catalog, groups, codelists and relations of a microdata flow
+      parameters:
+        - $ref: '#/components/parameters/flowRef'
+        - $ref: '#/components/parameters/stage'
+      responses: {'200': {description: Structure, content: {application/json: {schema: {type: object}}}}, '401': {$ref: '#/components/responses/unauthorized'}, '404': {$ref: '#/components/responses/notFound'}}
+  /microdata/{flowRef}:
+    get:
+      summary: Main table (one row per entity and reporting period)
+      parameters:
+        - $ref: '#/components/parameters/flowRef'
+        - $ref: '#/components/parameters/reportingPeriod'
+        - $ref: '#/components/parameters/fieldFilter'
+        - $ref: '#/components/parameters/asOf'
+        - $ref: '#/components/parameters/stage'
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/offset'
+        - $ref: '#/components/parameters/microFormat'
+      responses: {'200': {$ref: '#/components/responses/table'}, '400': {description: Unknown field or invalid parameter}, '401': {$ref: '#/components/responses/unauthorized'}, '403': {$ref: '#/components/responses/forbidden'}, '404': {$ref: '#/components/responses/notFound'}}
+  /microdata/{flowRef}/groups/{group}:
+    get:
+      summary: Repeating group as child table (ENTITY_ID, REPORTING_PERIOD, ITEM_NO + group fields)
+      parameters:
+        - $ref: '#/components/parameters/flowRef'
+        - {name: group, in: path, required: true, schema: {type: string}}
+        - $ref: '#/components/parameters/reportingPeriod'
+        - $ref: '#/components/parameters/fieldFilter'
+        - $ref: '#/components/parameters/asOf'
+        - $ref: '#/components/parameters/stage'
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/offset'
+        - $ref: '#/components/parameters/microFormat'
+      responses: {'200': {$ref: '#/components/responses/table'}, '401': {$ref: '#/components/responses/unauthorized'}, '403': {$ref: '#/components/responses/forbidden'}, '404': {$ref: '#/components/responses/notFound'}}

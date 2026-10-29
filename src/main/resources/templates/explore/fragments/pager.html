@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<body>
+<!-- paging links; the page needs pageUrlPrefix ("...?filters&") in its model -->
+<div th:fragment="pager(page, pages)" class="join mt-4" th:if="${pages > 1}">
+        <a class="join-item btn btn-sm" th:classappend="${page == 0} ? 'btn-disabled'" th:href="${pageUrlPrefix} + 'page=0'">«</a>
+        <a class="join-item btn btn-sm" th:classappend="${page == 0} ? 'btn-disabled'" th:href="${pageUrlPrefix} + 'page=' + (${page} - 1)">‹</a>
+        <span class="join-item btn btn-sm btn-active pointer-events-none" th:text="(${page} + 1) + ' / ' + ${pages}"></span>
+        <a class="join-item btn btn-sm" th:classappend="${page + 1 >= pages} ? 'btn-disabled'" th:href="${pageUrlPrefix} + 'page=' + (${page} + 1)">›</a>
+        <a class="join-item btn btn-sm" th:classappend="${page + 1 >= pages} ? 'btn-disabled'" th:href="${pageUrlPrefix} + 'page=' + (${pages} - 1)">»</a>
+</div>
+</body>
+</html>

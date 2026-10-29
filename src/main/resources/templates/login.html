@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org" data-theme="sdmxdw">
+<head>
+    <meta charset="UTF-8"/>
+    <title>SDMxDW – Login</title>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.23/dist/full.min.css" rel="stylesheet" type="text/css" />
+    <link rel="stylesheet" href="/css/brand.css" />
+    <link rel="icon" href="/img/favicon.png" />
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="min-h-screen flex items-center justify-center bg-base-200">
+<form class="card w-96 bg-base-100 shadow-xl p-6 space-y-4" method="post" th:action="@{/login}">
+    <img src="/img/logo-full.png" alt="SDMxDW" class="mx-auto h-24 w-auto"/>
+    <input class="input input-bordered w-full" type="email" name="username" placeholder="Email" required/>
+    <input class="input input-bordered w-full" type="password" name="password" placeholder="Password" required/>
+    <button class="btn btn-primary w-full" type="submit">Log in</button>
+</form>
+</body>
+</html>

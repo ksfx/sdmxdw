@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org" data-theme="sdmxdw">
+<head>
+    <meta charset="UTF-8"/>
+    <title>Category Schemes</title>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.23/dist/full.min.css" rel="stylesheet" type="text/css" />
+    <link rel="stylesheet" href="/css/brand.css" />
+    <link rel="icon" href="/img/favicon.png" />
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="min-h-screen bg-base-200">
+<div th:replace="~{fragments/nav :: nav}"></div>
+<div class="p-8 space-y-6">
+    <div class="card bg-base-100 shadow-xl p-6">
+        <h1 class="text-xl font-bold mb-4">Category Schemes</h1>
+        <table class="table">
+            <thead>
+            <tr><th>Agency</th><th>Id</th><th>Version</th><th>Name</th><th>Categories</th></tr>
+            </thead>
+            <tbody>
+            <tr th:each="scheme : ${schemes}">
+                <td th:text="${scheme.agencyId}"></td>
+                <td><a class="link link-primary" th:href="@{/structures/category-schemes/{id}(id=${scheme.id})}" th:text="${scheme.artefactId}"></a></td>
+                <td th:text="${scheme.version}"></td>
+                <td th:text="${scheme.name}"></td>
+                <td th:text="${scheme.categories.size()}"></td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="card bg-base-100 shadow-xl p-6 max-w-lg">
+        <h2 class="font-bold mb-4">New Category Scheme</h2>
+        <form method="post" th:action="@{/structures/category-schemes}" class="space-y-2">
+            <input class="input input-bordered w-full" name="agencyId" placeholder="Agency Id" required/>
+            <input class="input input-bordered w-full" name="artefactId" placeholder="Artefact Id (e.g. CS_NAV)" required/>
+            <input class="input input-bordered w-full" name="version" placeholder="Version" required/>
+            <input class="input input-bordered w-full" name="name" placeholder="Name" required/>
+            <button class="btn btn-primary" type="submit">Create</button>
+        </form>
+    </div>
+</div>
+</body>
+</html>

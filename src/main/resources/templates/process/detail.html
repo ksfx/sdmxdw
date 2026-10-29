@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org" data-theme="sdmxdw">
+<head th:replace="~{process/fragments/head :: head(${process.name})}"></head>
+<body class="min-h-screen bg-base-200">
+<div th:replace="~{fragments/nav :: nav}"></div>
+<div class="p-8 space-y-6">
+    <div class="card bg-base-100 shadow-xl p-6">
+        <div class="flex flex-wrap justify-between gap-4">
+            <div>
+                <p class="text-sm"><a class="link" th:href="@{/processes}">Processes</a></p>
+                <h1 class="text-2xl font-bold" th:text="${process.name}"></h1>
+                <p class="text-sm opacity-70 font-mono" th:text="'folder ' + ${process.folder} + '/'"></p>
+                <p class="mt-1 max-w-3xl" th:if="${process.description}" th:text="${process.description}"></p>
+                <p class="text-xs opacity-70 mt-2">
+                    <span th:if="${process.schedule == null}">Manual start</span>
+                    <span th:if="${process.schedule != null}" th:text="'Schedule ' + ${process.schedule} + (${process.enabled} ? ' - next: ' + ${nextRuns} : ' (paused)')"></span>
+                    <span th:if="${!process.enabled}" class="badge badge-warning badge-sm ml-1">paused</span>
+                </p>
+            </div>
+            <div class="flex flex-col items-end gap-2">
+                <span th:if="${running}" class="badge badge-info">running</span>
+                <div class="flex gap-2">
+                    <a class="btn btn-sm" th:href="@{/processes/{id}/run(id=${process.id})}">Dry run…</a>
+                    <a th:if="${!#lists.isEmpty(params)}" class="btn btn-sm btn-primary" th:href="@{/processes/{id}/run(id=${process.id})}">Run…</a>
+                    <form th:if="${#lists.isEmpty(params)}" method="post" th:action="@{/processes/{id}/run(id=${process.id})}">
+                        <button class="btn btn-sm btn-primary" type="submit" th:disabled="${#lists.isEmpty(process.steps)}">Run now</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div th:replace="~{process/fragments/head :: alerts}"></div>
+
+    <div role="tablist" class="tabs tabs-boxed bg-base-100 shadow w-fit">
+        <a role="tab" class="tab" th:classappend="${tab == 'overview'} ? 'tab-active'" th:href="@{/processes/{id}(id=${process.id})}">Overview</a>
+        <a role="tab" class="tab" th:classappend="${tab == 'code'} ? 'tab-active'" th:href="@{/processes/{id}(id=${process.id},tab='code')}">Code</a>
+        <a role="tab" class="tab" th:classappend="${tab == 'runs'} ? 'tab-active'" th:href="@{/processes/{id}(id=${process.id},tab='runs')}">Runs</a>
+        <a role="tab" class="tab" th:classappend="${tab == 'settings'} ? 'tab-active'" th:href="@{/processes/{id}(id=${process.id},tab='settings')}">Settings</a>
+    </div>
+
+    <!-- ===== overview: steps ===== -->
+    <th:block th:if="${tab == 'overview'}">
+        <div class="card bg-base-100 shadow-xl p-6" th:if="${!#lists.isEmpty(process.steps)}">
+            <h2 class="font-bold mb-2">Flow</h2>
+            <div id="step-graph" style="height: 220px;"></div>
+        </div>
+        <form class="card bg-base-100 shadow-xl p-6 space-y-3" method="post" th:action="@{/processes/{id}/steps(id=${process.id})}" id="steps-form">
+            <div class="flex justify-between items-center">
+                <h2 class="font-bold">Steps</h2>
+                <div class="flex gap-2">
+                    <button type="button" class="btn btn-sm" onclick="addStep()">+ Step</button>
+                    <button class="btn btn-sm btn-primary" type="submit">Save steps</button>
+                </div>
+            </div>
+            <p class="text-xs opacity-70">Steps run in this order. A step runs when the steps it <b>needs</b> succeeded (empty = the previous step).
+                After each script step its output files are loaded into Alpha (all or nothing).
+                Arguments may use run parameters as <code>${name}</code><span th:unless="${rAvailable}"> · R is not configured on this server</span>.</p>
+            <div class="overflow-x-auto">
+            <table class="table table-sm" id="steps">
+                <thead><tr><th></th><th>Key</th><th>Type</th><th>What</th><th>Needs</th><th></th></tr></thead>
+                <tbody>
+                <tr th:each="s, it : ${process.steps}" class="step-row align-top">
+                    <td class="whitespace-nowrap">
+                        <button type="button" class="btn btn-ghost btn-xs" onclick="moveStep(this,-1)" title="Up">↑</button>
+                        <button type="button" class="btn btn-ghost btn-xs" onclick="moveStep(this,1)" title="Down">↓</button>
+                    </td>
+                    <td><input class="input input-bordered input-xs w-28 font-mono" data-f="stepKey" th:value="${s.stepKey}" required/></td>
+                    <td>
+                        <select class="select select-bordered select-xs" data-f="type" onchange="showType(this)">
+                            <option th:each="t : ${stepTypes}" th:value="${t}" th:text="${t}" th:selected="${t == s.type}"></option>
+                        </select>
+                    </td>
+                    <td class="min-w-96">
+                        <div class="t-SCRIPT flex gap-1">
+                            <select class="select select-bordered select-xs w-48" data-f="scriptPath">
+                                <option value="">(script)</option>
+                                <option th:each="f : ${scripts}" th:value="${f.path}" th:text="${f.path}" th:selected="${f.path == s.scriptPath}"></option>
+                            </select>
+                            <input class="input input-bordered input-xs flex-1 font-mono" data-f="args" th:value="${s.args}" placeholder="arguments, e.g. --flow SNB:DF_KRED(3.0.0) --period ${period}"/>
+                        </div>
+                        <select class="t-AGGREGATE select select-bordered select-xs w-full" data-f="aggregateTarget">
+                            <option value="">(microdata flow with linked dataflow)</option>
+                            <option th:each="r : ${aggregatableRefs}" th:value="${r}" th:text="${r}" th:selected="${r == s.target}"></option>
+                        </select>
+                        <select class="t-PROMOTE select select-bordered select-xs w-full" data-f="promoteTarget">
+                            <option value="">(flow to publish)</option>
+                            <optgroup label="Dataflows"><option th:each="r : ${dataflowRefs}" th:value="${r}" th:text="${r}" th:selected="${r == s.target}"></option></optgroup>
+                            <optgroup label="Microdata flows"><option th:each="r : ${microdataRefs}" th:value="${r}" th:text="${r}" th:selected="${r == s.target}"></option></optgroup>
+                        </select>
+                        <select class="t-PROCESS select select-bordered select-xs w-full" data-f="subProcessId">
+                            <option value="">(process)</option>
+                            <option th:each="o : ${otherProcesses}" th:value="${o.id}" th:text="${o.name}" th:selected="${o.id == s.subProcessId}"></option>
+                        </select>
+                    </td>
+                    <td><input class="input input-bordered input-xs w-32 font-mono" data-f="needs" th:value="${s.needs}" placeholder="previous"/></td>
+                    <td><button type="button" class="btn btn-ghost btn-xs text-error" onclick="this.closest('tr').remove()" title="Remove">✕</button></td>
+                </tr>
+                </tbody>
+            </table>
+            </div>
+            <p th:if="${#lists.isEmpty(scripts)}" class="text-sm text-warning">The folder has no .py or .R script yet - create one in the <a class="link" th:href="@{/processes/{id}(id=${process.id},tab='code')}">Code</a> tab.</p>
+        </form>
+        <template id="step-template">
+            <tr class="step-row align-top">
+                <td class="whitespace-nowrap">
+                    <button type="button" class="btn btn-ghost btn-xs" onclick="moveStep(this,-1)">↑</button>
+                    <button type="button" class="btn btn-ghost btn-xs" onclick="moveStep(this,1)">↓</button>
+                </td>
+                <td><input class="input input-bordered input-xs w-28 font-mono" data-f="stepKey" required/></td>
+                <td><select class="select select-bordered select-xs" data-f="type" onchange="showType(this)">
+                    <option th:each="t : ${stepTypes}" th:value="${t}" th:text="${t}"></option></select></td>
+                <td class="min-w-96">
+                    <div class="t-SCRIPT flex gap-1">
+                        <select class="select select-bordered select-xs w-48" data-f="scriptPath"><option value="">(script)</option>
+                            <option th:each="f : ${scripts}" th:value="${f.path}" th:text="${f.path}"></option></select>
+                        <input class="input input-bordered input-xs flex-1 font-mono" data-f="args" placeholder="arguments"/>
+                    </div>
+                    <select class="t-AGGREGATE select select-bordered select-xs w-full" data-f="aggregateTarget"><option value="">(microdata flow with linked dataflow)</option>
+                        <option th:each="r : ${aggregatableRefs}" th:value="${r}" th:text="${r}"></option></select>
+                    <select class="t-PROMOTE select select-bordered select-xs w-full" data-f="promoteTarget"><option value="">(flow to publish)</option>
+                        <optgroup label="Dataflows"><option th:each="r : ${dataflowRefs}" th:value="${r}" th:text="${r}"></option></optgroup>
+                        <optgroup label="Microdata flows"><option th:each="r : ${microdataRefs}" th:value="${r}" th:text="${r}"></option></optgroup></select>
+                    <select class="t-PROCESS select select-bordered select-xs w-full" data-f="subProcessId"><option value="">(process)</option>
+                        <option th:each="o : ${otherProcesses}" th:value="${o.id}" th:text="${o.name}"></option></select>
+                </td>
+                <td><input class="input input-bordered input-xs w-32 font-mono" data-f="needs" placeholder="previous"/></td>
+                <td><button type="button" class="btn btn-ghost btn-xs text-error" onclick="this.closest('tr').remove()">✕</button></td>
+            </tr>
+        </template>
+        <script src="https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
+        <script th:inline="javascript">
+            function showType(select) {
+                const row = select.closest('tr');
+                ['SCRIPT', 'AGGREGATE', 'PROMOTE', 'PROCESS'].forEach(t =>
+                    row.querySelectorAll('.t-' + t).forEach(e => e.style.display = (t === select.value ? '' : 'none')));
+            }
+            function addStep() {
+                const row = document.getElementById('step-template').content.firstElementChild.cloneNode(true);
+                document.querySelector('#steps tbody').appendChild(row);
+                showType(row.querySelector('[data-f=type]'));
+                row.querySelector('[data-f=stepKey]').focus();
+            }
+            function moveStep(button, dir) {
+                const row = button.closest('tr');
+                const other = dir < 0 ? row.previousElementSibling : row.nextElementSibling;
+                if (other) dir < 0 ? row.parentNode.insertBefore(row, other) : row.parentNode.insertBefore(other, row);
+            }
+            document.querySelectorAll('#steps [data-f=type]').forEach(showType);
+            document.getElementById('steps-form').addEventListener('submit', () => {
+                document.querySelectorAll('#steps tbody tr').forEach((row, i) =>
+                    row.querySelectorAll('[data-f]').forEach(e => e.name = 'steps[' + i + '].' + e.dataset.f));
+            });
+            const graph = /*[[${graphJson}]]*/ '{"nodes":[],"edges":[]}';
+            const el = document.getElementById('step-graph');
+            if (el && window.vis) {
+                const data = JSON.parse(graph);
+                new vis.Network(el, {nodes: new vis.DataSet(data.nodes), edges: new vis.DataSet(data.edges)}, {
+                    layout: {hierarchical: {direction: 'LR', sortMethod: 'directed', levelSeparation: 220}},
+                    physics: false, interaction: {dragNodes: false, zoomView: false},
+                    nodes: {shape: 'box', margin: 10, font: {face: 'ui-monospace, monospace', size: 13, multi: false}},
+                    edges: {arrows: 'to', color: '#6b7280'},
+                    groups: {SCRIPT: {color: {background: '#e0e7ff', border: '#053771'}},
+                             AGGREGATE: {color: {background: '#ccfbf1', border: '#13ad8f'}},
+                             PROMOTE: {color: {background: '#fef3c7', border: '#d97706'}},
+                             PROCESS: {color: {background: '#f3f4f6', border: '#6b7280'}}}
+                });
+            }
+        </script>
+    </th:block>
+
+    <!-- ===== code ===== -->
+    <th:block th:if="${tab == 'code'}">
+        <div th:replace="~{process/fragments/code :: editor('/processes/' + ${process.id} + '?tab=code', '/processes/' + ${process.id} + '/files')}"></div>
+    </th:block>
+
+    <!-- ===== runs ===== -->
+    <div class="card bg-base-100 shadow-xl p-6" th:if="${tab == 'runs'}">
+        <table class="table table-sm">
+            <thead><tr><th>#</th><th>Status</th><th>Trigger</th><th>Started</th><th>Duration</th><th>Parameters</th><th>Code</th></tr></thead>
+            <tbody>
+            <tr th:each="r : ${runs}">
+                <td><a class="link link-primary" th:href="@{/processes/{id}/runs/{rid}(id=${process.id},rid=${r.id})}" th:text="${r.id}"></a></td>
+                <td><span th:replace="~{process/fragments/head :: status(${r.status.name()})}"></span>
+                    <span th:if="${r.dryRun}" class="badge badge-sm badge-outline">dry run</span></td>
+                <td class="text-xs" th:text="${r.trigger} + ' · ' + ${r.triggeredBy}"></td>
+                <td class="text-xs whitespace-nowrap" th:text="${r.startedAt} ? ${#temporals.format(r.startedAt, 'yyyy-MM-dd HH:mm:ss')} : 'queued'"></td>
+                <td class="text-xs" th:text="${r.duration} ? ${r.duration.toSeconds()} + ' s' : ''"></td>
+                <td class="text-xs font-mono max-w-xs truncate" th:text="${r.paramsJson == '{}'} ? '' : ${r.paramsJson}"></td>
+                <td class="text-xs font-mono" th:text="${r.commitSha} ? ${#strings.substring(r.commitSha, 0, 8)} : ''"></td>
+            </tr>
+            </tbody>
+        </table>
+        <p th:if="${#lists.isEmpty(runs)}" class="opacity-60">No runs yet.</p>
+        <div class="join mt-4" th:if="${runPages > 1}">
+            <a class="join-item btn btn-sm" th:classappend="${runPage == 0} ? 'btn-disabled'" th:href="@{/processes/{id}(id=${process.id},tab='runs',page=${runPage - 1})}">‹</a>
+            <span class="join-item btn btn-sm pointer-events-none" th:text="(${runPage} + 1) + ' / ' + ${runPages}"></span>
+            <a class="join-item btn btn-sm" th:classappend="${runPage + 1 >= runPages} ? 'btn-disabled'" th:href="@{/processes/{id}(id=${process.id},tab='runs',page=${runPage + 1})}">›</a>
+        </div>
+    </div>
+
+    <!-- ===== settings ===== -->
+    <th:block th:if="${tab == 'settings'}">
+        <form class="card bg-base-100 shadow-xl p-6 space-y-4 max-w-4xl" method="post" th:action="@{/processes/{id}/settings(id=${process.id})}" id="settings-form">
+            <div class="grid md:grid-cols-2 gap-4">
+                <label class="form-control"><span class="label-text text-sm">Name</span>
+                    <input class="input input-bordered input-sm" name="name" th:value="${process.name}" required/></label>
+                <label class="form-control"><span class="label-text text-sm">Failure notification (e-mail, comma-separated; empty = all Datenmanager)</span>
+                    <input class="input input-bordered input-sm" name="notifyEmail" th:value="${process.notifyEmail}"/></label>
+            </div>
+            <label class="form-control"><span class="label-text text-sm">Description</span>
+                <textarea class="textarea textarea-bordered" name="description" rows="2" th:text="${process.description}"></textarea></label>
+            <div class="grid md:grid-cols-3 gap-4">
+                <label class="form-control"><span class="label-text text-sm">Schedule (cron: sec min hour day month weekday)</span>
+                    <input class="input input-bordered input-sm font-mono" name="schedule" list="cron-presets" th:value="${process.schedule}" placeholder="empty = manual only"/>
+                    <datalist id="cron-presets">
+                        <option value="0 0 6 * * *">daily 06:00</option>
+                        <option value="0 0 6 * * MON-FRI">weekdays 06:00</option>
+                        <option value="0 0 6 1 * *">monthly, 1st 06:00</option>
+                        <option value="0 0 6 5 1,4,7,10 *">quarterly, 5th 06:00</option>
+                    </datalist>
+                    <span class="text-xs opacity-60 mt-1" th:if="${nextRuns}" th:text="'next: ' + ${nextRuns}"></span></label>
+                <label class="form-control"><span class="label-text text-sm">Timeout (minutes)</span>
+                    <input class="input input-bordered input-sm" type="number" min="1" max="1440" name="timeoutMinutes" th:value="${process.timeoutMinutes}"/></label>
+                <label class="form-control"><span class="label-text text-sm">Run after success of</span>
+                    <select class="select select-bordered select-sm" name="runAfterProcessId">
+                        <option value="">(no chaining)</option>
+                        <option th:each="o : ${otherProcesses}" th:value="${o.id}" th:text="${o.name}" th:selected="${o.id == process.runAfterProcessId}"></option>
+                    </select></label>
+            </div>
+            <label class="label cursor-pointer justify-start gap-2 w-fit">
+                <input type="checkbox" class="toggle toggle-success toggle-sm" name="enabled" value="true" th:checked="${process.enabled}"/>
+                <span class="label-text">Active (scheduled and chained runs; manual runs are always possible)</span></label>
+
+            <div>
+                <h3 class="font-semibold text-sm">Secrets passed to the steps</h3>
+                <p class="text-xs opacity-60 mb-1">As environment variables with their name. <a class="link" th:href="@{/processes/secrets}">Manage secrets</a></p>
+                <label th:each="s : ${secrets}" class="label cursor-pointer justify-start gap-2 w-fit py-0">
+                    <input type="checkbox" class="checkbox checkbox-xs" name="secretNames" th:value="${s.name}" th:checked="${#lists.contains(process.secretNameList(), s.name)}"/>
+                    <span class="font-mono text-sm" th:text="${s.name}"></span></label>
+                <p th:if="${#lists.isEmpty(secrets)}" class="text-xs opacity-60">No secrets defined.</p>
+            </div>
+
+            <div>
+                <h3 class="font-semibold text-sm">Run parameters</h3>
+                <p class="text-xs opacity-60 mb-1">Asked when starting manually; scheduled runs use the defaults. In scripts: <code>param("name")</code> / <code>sdmxdw_param("name")</code>, in arguments <code>${name}</code>.</p>
+                <table class="table table-xs" id="params">
+                    <thead><tr><th>Name</th><th>Label</th><th>Default</th><th>Required</th><th></th></tr></thead>
+                    <tbody>
+                    <tr th:each="p : ${params}">
+                        <td><input class="input input-bordered input-xs font-mono w-32" data-f="name" th:value="${p.name}"/></td>
+                        <td><input class="input input-bordered input-xs w-56" data-f="label" th:value="${p.label}"/></td>
+                        <td><input class="input input-bordered input-xs w-40" data-f="defaultValue" th:value="${p.defaultValue}"/></td>
+                        <td><input type="checkbox" class="checkbox checkbox-xs" data-f="required" th:checked="${p.required}"/></td>
+                        <td><button type="button" class="btn btn-ghost btn-xs text-error" onclick="this.closest('tr').remove()">✕</button></td>
+                    </tr>
+                    </tbody>
+                </table>
+                <button type="button" class="btn btn-xs mt-1" onclick="addParam()">+ Parameter</button>
+            </div>
+            <button class="btn btn-primary btn-sm w-fit" type="submit">Save settings</button>
+        </form>
+        <div class="card bg-base-100 shadow-xl p-6 max-w-4xl border border-error/30">
+            <h3 class="font-semibold">Delete process</h3>
+            <p class="text-sm opacity-70">Deletes metadata and run history. The folder with the code is kept.</p>
+            <form method="post" th:action="@{/processes/{id}/delete(id=${process.id})}" onsubmit="return confirm('Delete this process and its run history?')">
+                <button class="btn btn-sm btn-error btn-outline mt-2" type="submit">Delete process</button>
+            </form>
+        </div>
+        <script>
+            function addParam() {
+                const row = document.createElement('tr');
+                row.innerHTML = '<td><input class="input input-bordered input-xs font-mono w-32" data-f="name" placeholder="period"/></td>'
+                    + '<td><input class="input input-bordered input-xs w-56" data-f="label"/></td>'
+                    + '<td><input class="input input-bordered input-xs w-40" data-f="defaultValue"/></td>'
+                    + '<td><input type="checkbox" class="checkbox checkbox-xs" data-f="required"/></td>'
+                    + '<td><button type="button" class="btn btn-ghost btn-xs text-error" onclick="this.closest(\'tr\').remove()">✕</button></td>';
+                document.querySelector('#params tbody').appendChild(row);
+            }
+            document.getElementById('settings-form').addEventListener('submit', () => {
+                document.querySelectorAll('#params tbody tr').forEach((row, i) =>
+                    row.querySelectorAll('[data-f]').forEach(e => e.name = 'params[' + i + '].' + e.dataset.f));
+            });
+        </script>
+    </th:block>
+</div>
+</body>
+</html>

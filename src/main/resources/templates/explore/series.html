@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org" data-theme="sdmxdw">
+<head>
+    <meta charset="UTF-8"/>
+    <title>Explore series</title>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.23/dist/full.min.css" rel="stylesheet" type="text/css" />
+    <link rel="stylesheet" href="/css/brand.css" />
+    <link rel="icon" href="/img/favicon.png" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://unpkg.com/htmx.org@2.0.3"></script>
+</head>
+<body class="min-h-screen bg-base-200">
+<div th:replace="~{fragments/nav :: nav}"></div>
+<div class="p-8 space-y-6">
+    <div class="card bg-base-100 shadow-xl p-6">
+        <h1 class="text-2xl font-bold font-mono" th:text="${seriesKey}"></h1>
+        <div th:replace="~{explore/fragments/series-parts :: meta}"></div>
+        <div class="mt-4 flex gap-2">
+            <div th:replace="~{explore/fragments/series-parts :: exportMenu}"></div>
+            <a class="btn btn-sm" th:href="@{/explore/dataflows/{id}(id=${dataflow.id},stage=${stage == 'ALPHA'} ? 'ALPHA' : null)}">Back</a>
+        </div>
+        <div class="mt-4"><form th:replace="~{explore/fragments/series-parts :: asOfForm}"></form></div>
+        <div class="mt-3"><div th:replace="~{explore/fragments/series-parts :: stageSwitch}"></div></div>
+        <canvas id="seriesChart" class="mt-6" height="100"></canvas>
+    </div>
+
+    <div class="card bg-base-100 shadow-xl p-6">
+        <table th:replace="~{explore/fragments/series-parts :: valueTable}"></table>
+    </div>
+</div>
+<script th:inline="javascript">
+    const labels = /*[[${chartLabels}]]*/ [];
+    const values = /*[[${chartValues}]]*/ [];
+    const asOfValues = /*[[${chartAsOfValues}]]*/ null;
+    const datasets = [{label: /*[[${seriesKey}]]*/ 'Series', data: values, borderColor: '#053771', tension: 0.1}];
+    if (asOfValues) {
+        datasets.push({label: 'as of ' + /*[[${asOf}]]*/ '', data: asOfValues, borderColor: '#13ad8f',
+                       borderDash: [6, 4], tension: 0.1, spanGaps: false});
+    }
+    new Chart(document.getElementById('seriesChart'), {type: 'line', data: {labels: labels, datasets: datasets}});
+</script>
+</body>
+</html>

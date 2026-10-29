@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org" data-theme="sdmxdw">
+<head>
+    <meta charset="UTF-8"/>
+    <title>Read API</title>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.23/dist/full.min.css" rel="stylesheet" type="text/css" />
+    <link rel="stylesheet" href="/css/brand.css" />
+    <link rel="icon" href="/img/favicon.png" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        pre { background: oklch(var(--b2)); padding: .75rem 1rem; border-radius: .5rem; overflow-x: auto; font-size: .8rem; line-height: 1.45; }
+        code { font-family: ui-monospace, monospace; }
+        td code, p code, li code { background: oklch(var(--b2)); padding: .05rem .3rem; border-radius: .25rem; font-size: .85em; }
+    </style>
+</head>
+<body class="min-h-screen bg-base-200">
+<div th:replace="~{fragments/nav :: nav}"></div>
+<div class="p-8 space-y-6 max-w-5xl">
+    <div class="card bg-base-100 shadow-xl p-6">
+        <h1 class="text-2xl font-bold mb-2">Read API</h1>
+        <p>Scripts read data from SDMxDW via <code th:text="${baseUrl}"></code>: time series with the standard SDMX REST API
+            (usable with Python <code>sdmx1</code> and R <code>rsdmx</code>), microdata with a REST API that follows the same conventions.
+            Machine-readable description: <a class="link" href="/api-docs/openapi.yaml">OpenAPI</a>.</p>
+        <ul class="list-disc pl-6 mt-3 text-sm space-y-1">
+            <li><a class="link" href="#auth">Authentication</a></li>
+            <li><a class="link" href="#timeseries">Time series (SDMX)</a></li>
+            <li><a class="link" href="#microdata">Microdata</a></li>
+            <li><a class="link" href="#python">Python examples</a> · <a class="link" href="#r">R examples</a></li>
+        </ul>
+    </div>
+
+    <div class="card bg-base-100 shadow-xl p-6" id="auth">
+        <h2 class="text-xl font-bold mb-2">Authentication</h2>
+        <p>Create a personal API token under <a class="link" href="/account/profile#api-tokens">Profile → API tokens</a> and send it with every request:</p>
+        <pre><code>Authorization: Bearer sdw_...</code></pre>
+        <p class="text-sm">Clients without header support can send the token as basic-auth password (any user name).
+            A token has the rights of its owner: everyone sees published (<b>Beta</b>) data; Datenmanager tokens can additionally read
+            <b>Alpha</b> data with <code>stage=ALPHA</code>. Missing or invalid tokens get <code>401</code>, Alpha requests of other users <code>403</code>.
+            Keep tokens out of notebooks and repositories, e.g. in an environment variable <code>SDMXDW_TOKEN</code>.</p>
+    </div>
+
+    <div class="card bg-base-100 shadow-xl p-6" id="timeseries">
+        <h2 class="text-xl font-bold mb-2">Time series (SDMX REST)</h2>
+        <h3 class="font-bold mt-2">Structure queries</h3>
+        <table class="table table-sm">
+            <tbody>
+            <tr><td><code>/dataflow/{agency}/{id}/{version}</code></td><td>SDMX 2.1 style; types <code>dataflow</code>, <code>datastructure</code>, <code>codelist</code>, <code>conceptscheme</code>, <code>categoryscheme</code>, <code>categorisation</code>. Output SDMX-ML 2.1.</td></tr>
+            <tr><td><code>/structure/{type}/{agency}/{id}/{version}</code></td><td>SDMX 3.0 style, output SDMX-ML 3.0.</td></tr>
+            <tr><td><code>?references=</code></td><td><code>none</code> (default), <code>parents</code>, <code>parentsandsiblings</code>, <code>children</code>, <code>descendants</code>, <code>all</code> or a type name.</td></tr>
+            </tbody>
+        </table>
+        <p class="text-sm mt-1">Wildcards: <code>all</code> / <code>*</code>; versions <code>latest</code> / <code>~</code>. The agency <code>SDMXDW</code> stands for all agencies (sdmx1 sends its source id as agency).</p>
+
+        <h3 class="font-bold mt-4">Data queries</h3>
+        <table class="table table-sm">
+            <tbody>
+            <tr><td><code>/data/{flowRef}/{key}</code></td><td>SDMX 2.1 style; flowRef <code>ID</code>, <code>AGENCY,ID</code> or <code>AGENCY,ID,VERSION</code>; key like <code>Q.DEMO01._T.39+40.26</code> (<code>+</code> = or, empty = all).</td></tr>
+            <tr><td><code>/data/dataflow/{agency}/{id}/{version}/{key}</code></td><td>SDMX 3.0 style, additionally <code>c[DIM]=A,B</code> and <code>c[TIME_PERIOD]=ge:2020-Q1+le:2024-Q4</code>.</td></tr>
+            <tr><td><code>startPeriod</code>, <code>endPeriod</code></td><td>Time range.</td></tr>
+            <tr><td><code>asOf</code></td><td>Data as published at that time: <code>2026-06-30</code> (end of day, UTC), <code>2026-06-30T12:00</code> or ISO instant.</td></tr>
+            <tr><td><code>firstNObservations</code>, <code>lastNObservations</code></td><td>Per series.</td></tr>
+            <tr><td><code>detail=serieskeysonly</code></td><td>Series keys without observations.</td></tr>
+            <tr><td><code>stage=ALPHA</code></td><td>Unpublished data, Datenmanager only.</td></tr>
+            </tbody>
+        </table>
+        <h3 class="font-bold mt-4">Formats</h3>
+        <table class="table table-sm">
+            <thead><tr><th>Accept header</th><th><code>format=</code></th><th>Format</th></tr></thead>
+            <tbody>
+            <tr><td><code>application/vnd.sdmx.genericdata+xml;version=2.1</code></td><td><code>genericxml</code></td><td>SDMX-ML 2.1 GenericData (default on 2.1 paths)</td></tr>
+            <tr><td><code>application/vnd.sdmx.structurespecificdata+xml;version=2.1</code></td><td><code>xml&amp;sdmxVersion=2.1</code></td><td>SDMX-ML 2.1 StructureSpecificData</td></tr>
+            <tr><td><code>application/vnd.sdmx.data+xml;version=3.0.0</code></td><td><code>xml</code></td><td>SDMX-ML 3.0 StructureSpecificData (default on 3.0 paths)</td></tr>
+            <tr><td><code>application/vnd.sdmx.data+csv;version=2.0.0</code> / <code>1.0.0</code></td><td><code>csv</code></td><td>SDMX-CSV 2.0 / 1.0</td></tr>
+            <tr><td><code>application/vnd.sdmx.data+json;version=1.0.0</code></td><td><code>json</code></td><td>SDMX-JSON 1.0</td></tr>
+            </tbody>
+        </table>
+        <p class="text-sm mt-1">SDMX 2.1 formats know a single primary measure: the first measure is delivered as <code>OBS_VALUE</code>, further measures as observation attributes.
+            SDMX 3.0 formats and SDMX-CSV 2.0 keep all measures under their own ids.</p>
+    </div>
+
+    <div class="card bg-base-100 shadow-xl p-6" id="microdata">
+        <h2 class="text-xl font-bold mb-2">Microdata</h2>
+        <table class="table table-sm">
+            <tbody>
+            <tr><td><code>/microdata</code></td><td>Catalog of all microdata flows (JSON).</td></tr>
+            <tr><td><code>/microdata/{flowRef}/structure</code></td><td>Fields with types, codelists, obligation; repeating groups; relations: which field references which flow (<code>references</code>) and which flows reference this one (<code>referencedBy</code>); available reporting periods.</td></tr>
+            <tr><td><code>/microdata/{flowRef}</code></td><td>Main table: one row per <code>ENTITY_ID</code> and <code>REPORTING_PERIOD</code>, one column per field.</td></tr>
+            <tr><td><code>/microdata/{flowRef}/groups/{group}</code></td><td>Repeating group (e.g. several collaterals per loan) as child table: <code>ENTITY_ID</code>, <code>REPORTING_PERIOD</code>, <code>ITEM_NO</code> + group fields.</td></tr>
+            </tbody>
+        </table>
+        <table class="table table-sm mt-2">
+            <tbody>
+            <tr><td><code>reportingPeriod</code></td><td>One or more periods (<code>2026-Q3,2026-Q2</code>) or <code>latest</code>.</td></tr>
+            <tr><td><code>c[FIELD]=A,B</code></td><td>Filter on a (non-group) field, several filters are combined with AND.</td></tr>
+            <tr><td><code>asOf</code>, <code>stage</code></td><td>As for time series.</td></tr>
+            <tr><td><code>limit</code>, <code>offset</code></td><td>Paging over records; header <code>X-Total-Count</code>, <code>Link: rel="next"</code>.</td></tr>
+            <tr><td><code>format</code></td><td><code>csv</code> (SDMX-CSV layout, default), <code>json</code>, <code>parquet</code> (typed columns; recommended for large volumes).</td></tr>
+            </tbody>
+        </table>
+        <p class="text-sm mt-1">References are delivered as ids and not pre-joined: join e.g. <code>INSTRUMENT.GEGENPARTEI</code> on
+            <code>GEGENPARTEI.ENTITY_ID</code> and <code>REPORTING_PERIOD</code>, as given in <code>joinOn</code> of the structure response.</p>
+    </div>
+
+    <div class="card bg-base-100 shadow-xl p-6" id="python">
+        <h2 class="text-xl font-bold mb-2">Python</h2>
+        <h3 class="font-bold">sdmx1 (time series)</h3>
+<pre><code th:inline="text">import os, sdmx
+
+sdmx.add_source({"id": "SDMXDW", "name": "SDMxDW", "url": "[[${baseUrl}]]"}, override=True)
+client = sdmx.Client("SDMXDW")
+client.session.headers["Authorization"] = "Bearer " + os.environ["SDMXDW_TOKEN"]
+
+flows = client.dataflow()                        # all dataflows
+msg = client.dataflow("DF_KRED", agency_id="SNB")  # dataflow incl. DSD, codelists, concepts
+dsd = msg.dataflow["DF_KRED"].structure
+data = client.data("DF_KRED", key="Q.DEMO01._T.39.26", dsd=dsd, params={"startPeriod": "2025-Q1"})
+df = sdmx.to_pandas(data)
+
+# parameters outside the SDMX standard (asOf, stage) via a full URL
+old = client.get(url="[[${baseUrl}]]/data/DF_KRED/Q.DEMO01._T.39.26?asOf=2026-06-30")</code></pre>
+        <h3 class="font-bold mt-3">pandas / requests (time series and microdata)</h3>
+<pre><code th:inline="text">import io, os, requests, pandas as pd
+
+s = requests.Session()
+s.headers["Authorization"] = "Bearer " + os.environ["SDMXDW_TOKEN"]
+base = "[[${baseUrl}]]"
+
+ts = pd.read_csv(io.StringIO(s.get(f"{base}/data/SNB,DF_KRED/Q.DEMO01._T..26?format=csv").text))
+
+structure = s.get(f"{base}/microdata/SNB,MDF_EKE_INSTRUMENT/structure").json()
+r = s.get(f"{base}/microdata/SNB,MDF_EKE_INSTRUMENT", params={"reportingPeriod": "latest", "format": "parquet"})
+instruments = pd.read_parquet(io.BytesIO(r.content))
+r = s.get(f"{base}/microdata/SNB,MDF_EKE_GEGENPARTEI", params={"reportingPeriod": "latest", "format": "parquet"})
+counterparties = pd.read_parquet(io.BytesIO(r.content))
+joined = instruments.merge(counterparties, left_on=["GEGENPARTEI", "REPORTING_PERIOD"],
+                           right_on=["ENTITY_ID", "REPORTING_PERIOD"], suffixes=("", "_GP"))</code></pre>
+    </div>
+
+    <div class="card bg-base-100 shadow-xl p-6" id="r">
+        <h2 class="text-xl font-bold mb-2">R</h2>
+        <h3 class="font-bold">rsdmx (time series)</h3>
+<pre><code th:inline="text">library(rsdmx)
+auth <- list(Authorization = paste("Bearer", Sys.getenv("SDMXDW_TOKEN")))
+base <- "[[${baseUrl}]]"
+
+flows <- as.data.frame(readSDMX(paste0(base, "/dataflow/all/all/latest"), headers = auth))
+dsd   <- readSDMX(paste0(base, "/datastructure/SNB/DSD_KRED/latest?references=children"), headers = auth)
+data  <- as.data.frame(readSDMX(paste0(base, "/data/SNB,DF_KRED/Q.DEMO01._T.39.26?startPeriod=2025-Q1"), headers = auth))</code></pre>
+        <h3 class="font-bold mt-3">httr2 + arrow (microdata)</h3>
+<pre><code th:inline="text">library(httr2); library(arrow)
+req <- request(paste0(base, "/microdata/SNB,MDF_EKE_INSTRUMENT")) |>
+  req_auth_bearer_token(Sys.getenv("SDMXDW_TOKEN"))
+
+structure <- resp_body_json(req_perform(req |> req_url_path_append("structure")))
+tmp <- tempfile(fileext = ".parquet")
+req_perform(req |> req_url_query(reportingPeriod = "latest", format = "parquet"), path = tmp)
+instruments <- read_parquet(tmp)</code></pre>
+    </div>
+</div>
+</body>
+</html>

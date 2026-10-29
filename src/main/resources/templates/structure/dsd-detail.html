@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org" data-theme="sdmxdw">
+<head>
+    <meta charset="UTF-8"/>
+    <title>DSD</title>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.23/dist/full.min.css" rel="stylesheet" type="text/css" />
+    <link rel="stylesheet" href="/css/brand.css" />
+    <link rel="icon" href="/img/favicon.png" />
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="min-h-screen bg-base-200">
+<div th:replace="~{fragments/nav :: nav}"></div>
+<div class="p-8 space-y-6">
+    <div class="card bg-base-100 shadow-xl p-6">
+        <h1 class="text-xl font-bold" th:text="${dsd.agencyId} + ':' + ${dsd.artefactId} + '(' + ${dsd.version} + ')'"></h1>
+        <p class="text-lg" th:text="${dsd.name}"></p>
+
+        <h3 class="font-bold mt-4">Dimensions</h3>
+        <table class="table">
+            <thead><tr><th>Position</th><th>Concept</th><th>Codelist</th><th>Type</th></tr></thead>
+            <tbody>
+            <tr th:each="row : ${dimensionRows}">
+                <td th:text="${row.position}"></td>
+                <td th:text="${row.conceptLabel}"></td>
+                <td th:text="${row.codelistLabel}"></td>
+                <td th:text="${row.dataType}"></td>
+            </tr>
+            </tbody>
+        </table>
+
+        <h3 class="font-bold mt-4">Measures</h3>
+        <table class="table">
+            <thead><tr><th>Concept</th><th>Type</th></tr></thead>
+            <tbody>
+            <tr th:each="row : ${measureRows}">
+                <td th:text="${row.conceptLabel}"></td>
+                <td th:text="${row.dataType}"></td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="card bg-base-100 shadow-xl p-6 max-w-lg">
+        <h2 class="font-bold mb-4">Add dimension</h2>
+        <form method="post" th:action="@{/structures/dsds/{id}/dimensions(id=${dsd.id})}" class="space-y-2">
+            <select class="select select-bordered w-full" name="conceptId" required>
+                <option th:each="c : ${conceptOptions}" th:value="${c.id}" th:text="${c.label}"></option>
+            </select>
+            <select class="select select-bordered w-full" name="codelistId">
+                <option value="">(uncoded)</option>
+                <option th:each="cl : ${codelists}" th:value="${cl.id}" th:text="${cl.artefactId} + ' - ' + ${cl.name}"></option>
+            </select>
+            <select class="select select-bordered w-full" name="dataType" required>
+                <option th:each="t : ${dataTypes}" th:value="${t}" th:text="${t}"></option>
+            </select>
+            <button class="btn btn-primary" type="submit">Add</button>
+        </form>
+    </div>
+
+    <div class="card bg-base-100 shadow-xl p-6 max-w-lg">
+        <h2 class="font-bold mb-4">Add measure</h2>
+        <form method="post" th:action="@{/structures/dsds/{id}/measures(id=${dsd.id})}" class="space-y-2">
+            <select class="select select-bordered w-full" name="conceptId" required>
+                <option th:each="c : ${conceptOptions}" th:value="${c.id}" th:text="${c.label}"></option>
+            </select>
+            <select class="select select-bordered w-full" name="dataType" required>
+                <option th:each="t : ${dataTypes}" th:value="${t}" th:text="${t}"></option>
+            </select>
+            <button class="btn btn-primary" type="submit">Add</button>
+        </form>
+    </div>
+</div>
+</body>
+</html>

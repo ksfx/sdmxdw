@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org" data-theme="sdmxdw">
+<head>
+    <meta charset="UTF-8"/>
+    <title>Dataflow</title>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.23/dist/full.min.css" rel="stylesheet" type="text/css" />
+    <link rel="stylesheet" href="/css/brand.css" />
+    <link rel="icon" href="/img/favicon.png" />
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="min-h-screen bg-base-200">
+<div th:replace="~{fragments/nav :: nav}"></div>
+<div class="p-8 space-y-6">
+    <div class="card bg-base-100 shadow-xl p-6">
+        <h1 class="text-xl font-bold" th:text="${dataflow.agencyId} + ':' + ${dataflow.artefactId} + '(' + ${dataflow.version} + ')'"></h1>
+        <p class="text-lg" th:text="${dataflow.name}"></p>
+        <p class="mt-2">Category: <span class="font-semibold" th:text="${currentCategoryLabel}"></span></p>
+        <a class="btn btn-sm mt-4" th:href="@{/explore/dataflows/{id}(id=${dataflow.id})}">View data in explorer</a>
+        <a class="btn btn-sm mt-4" th:href="@{/structures/dataflows/{id}/import-jobs(id=${dataflow.id})}">Import jobs</a>
+    </div>
+
+    <div class="card bg-base-100 shadow-xl p-6 max-w-lg">
+        <h2 class="font-bold mb-4">Assign category</h2>
+        <form method="post" th:action="@{/structures/dataflows/{id}/categorisation(id=${dataflow.id})}" class="space-y-2">
+            <select class="select select-bordered w-full" name="categoryId" required>
+                <option th:each="c : ${categoryOptions}" th:value="${c.id}" th:text="${c.label}"></option>
+            </select>
+            <button class="btn btn-primary" type="submit">Assign</button>
+        </form>
+    </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,8 @@
+[Unit]
+Description=SDMxDW nightly PostgreSQL backup
+
+[Service]
+Type=oneshot
+User=postgres
+EnvironmentFile=/opt/sdmxdw/sdmxdw.env
+ExecStart=/opt/sdmxdw/ops/backup-postgres.sh

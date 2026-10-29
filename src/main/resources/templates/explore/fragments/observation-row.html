@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<body>
+<table>
+<tr th:fragment="row" th:classappend="${justCorrected} ? 'bg-success/10'">
+    <td th:each="c : ${row.key}" class="font-mono" th:title="${c.name}" th:text="${c.code}"></td>
+    <td th:text="${row.timePeriod}"></td>
+    <td th:each="v, it : ${row.values}" class="text-right tabular-nums" th:title="${measureColumns[it.index].label}" th:text="${v}"></td>
+    <td class="text-xs opacity-70" th:title="'recorded by ' + ${row.recordedBy}" th:text="${#strings.substring(row.validFrom, 0, 16)}"></td>
+    <td class="whitespace-nowrap space-x-2">
+        <a class="link link-primary text-sm"
+           th:href="@{/explore/dataflows/{id}/observations/history(id=${dataflow.id},seriesId=${row.seriesId},timePeriod=${row.timePeriod},stage=${row.stage})}">History</a>
+        <a class="link link-primary text-sm" th:if="${editable}" href="#"
+           th:attr="hx-get=@{/explore/dataflows/{id}/observations/edit(id=${dataflow.id},seriesId=${row.seriesId},timePeriod=${row.timePeriod})}"
+           hx-target="closest tr" hx-swap="outerHTML">Edit</a>
+        <span th:if="${justCorrected}" class="text-xs text-success">Saved in Alpha - published with the next promotion</span>
+    </td>
+</tr>
+
+<tr th:fragment="editRow" class="bg-warning/10">
+    <td th:attr="colspan=${columnCount}">
+        <form class="flex flex-wrap items-end gap-3" method="post"
+              th:action="@{/explore/dataflows/{id}/observations/correct(id=${dataflow.id})}"
+              th:attr="hx-post=@{/explore/dataflows/{id}/observations/correct(id=${dataflow.id})}"
+              hx-target="closest tr" hx-swap="outerHTML">
+            <div>
+                <div class="text-xs opacity-60">Correct value of</div>
+                <div class="font-mono text-sm">
+                    <span th:each="c, it : ${row.key}" th:title="${c.name}" th:text="${c.code} + (${it.last} ? '' : '.')"></span>
+                    <span th:text="' @ ' + ${row.timePeriod}"></span>
+                </div>
+            </div>
+            <input type="hidden" name="seriesId" th:value="${row.seriesId}"/>
+            <input type="hidden" name="timePeriod" th:value="${row.timePeriod}"/>
+            <div th:each="v, it : ${row.values}" class="form-control">
+                <label class="label text-xs py-0" th:title="${measureColumns[it.index].label}" th:text="${measureColumns[it.index].code}"></label>
+                <input class="input input-bordered input-sm w-36 text-right" required autofocus
+                       th:name="'measure_' + ${measureIds[it.index]}" th:value="${v}"/>
+            </div>
+            <div class="form-control">
+                <label class="label text-xs py-0">Reason (optional)</label>
+                <input class="input input-bordered input-sm w-72" name="comment" placeholder="e.g. revised by reporting bank"/>
+            </div>
+            <button class="btn btn-primary btn-sm" type="submit">Save in Alpha</button>
+            <button class="btn btn-sm" type="button"
+                    th:attr="hx-get=@{/explore/dataflows/{id}/observations/row(id=${dataflow.id},seriesId=${row.seriesId},timePeriod=${row.timePeriod},stage=${row.stage})}"
+                    hx-target="closest tr" hx-swap="outerHTML">Cancel</button>
+        </form>
+    </td>
+</tr>
+</table>
+</body>
+</html>

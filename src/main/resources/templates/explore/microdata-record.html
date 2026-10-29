@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org" data-theme="sdmxdw">
+<head>
+    <meta charset="UTF-8"/>
+    <title th:text="${record.entityId}">Record</title>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.23/dist/full.min.css" rel="stylesheet" type="text/css" />
+    <link rel="stylesheet" href="/css/brand.css" />
+    <link rel="icon" href="/img/favicon.png" />
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="min-h-screen bg-base-200">
+<div th:replace="~{fragments/nav :: nav}"></div>
+<div class="p-8 space-y-6 max-w-6xl" th:with="alpha=${record.stage.name() == 'ALPHA'}">
+    <div class="card bg-base-100 shadow-xl p-6">
+        <div class="flex flex-wrap justify-between gap-4">
+            <div>
+                <p class="text-sm opacity-70">
+                    <a class="link" th:href="@{/explore/microdata/{id}(id=${flow.id},stage=${alpha} ? 'ALPHA' : null)}"
+                       th:text="${flow.agencyId} + ':' + ${flow.artefactId} + ' - ' + ${flow.name}"></a></p>
+                <h1 class="text-2xl font-bold font-mono" th:text="${record.entityId}"></h1>
+                <p class="text-sm mt-1">
+                    Reporting period <b th:text="${record.reportingPeriod}"></b>
+                    <span class="badge badge-sm ml-2" th:classappend="${alpha} ? 'badge-warning' : 'badge-primary'"
+                          th:text="${alpha} ? 'Unpublished (Alpha)' : 'Published (Beta)'"></span>
+                    <span th:if="${record.validTo != null}" class="badge badge-sm badge-ghost ml-1">superseded version</span>
+                    <span th:if="${unpublished}" class="badge badge-sm badge-info ml-1">never published</span>
+                </p>
+                <p class="text-xs opacity-60 mt-1">
+                    <span th:text="'Recorded ' + ${#temporals.format(record.validFrom, 'yyyy-MM-dd HH:mm')} + ' by ' + ${record.recordedBy}"></span>
+                    <span th:if="${record.comment}" th:text="' · Reason: ' + ${record.comment}"></span>
+                </p>
+            </div>
+            <div class="flex flex-col items-end gap-2" th:if="${isDatenmanager}">
+                <a th:if="${otherStageRecordId}" class="btn btn-sm"
+                   th:href="@{/explore/microdata/{fid}/records/{rid}(fid=${flow.id},rid=${otherStageRecordId})}"
+                   th:text="${alpha} ? 'Show published (Beta)' : 'Show unpublished (Alpha)'"></a>
+                <a th:if="${canEdit}" class="btn btn-sm btn-primary"
+                   th:href="@{/explore/microdata/{fid}/records/{rid}/edit(fid=${flow.id},rid=${record.id})}">Edit</a>
+            </div>
+        </div>
+        <div th:if="${flash}" class="alert alert-success mt-4 py-2"><span th:text="${flash}"></span></div>
+    </div>
+
+    <div class="card bg-base-100 shadow-xl p-6">
+        <table class="table table-sm">
+            <thead><tr><th>Field</th><th>Value</th><th th:if="${canEdit and !unpublished}">Published</th></tr></thead>
+            <tbody>
+            <tr th:each="row : ${rows}" th:classappend="${row.changed} ? 'bg-warning/10'">
+                <td th:title="${row.code}" th:text="${row.label}"></td>
+                <td>
+                    <a th:if="${row.link}" class="link link-primary font-mono" th:href="${row.link}" th:text="${row.value}"></a>
+                    <span th:unless="${row.link}" th:text="${row.value}"></span>
+                    <span th:if="${row.valueName}" class="text-xs opacity-60" th:text="'- ' + ${row.valueName}"></span>
+                </td>
+                <td th:if="${canEdit and !unpublished}" class="text-xs">
+                    <span th:if="${row.changed}" class="badge badge-sm badge-warning" th:text="'was ' + (${row.publishedValue} ?: '-')"></span>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="card bg-base-100 shadow-xl p-6" th:each="g : ${groups}">
+        <h2 class="font-bold mb-2">
+            <span th:text="${g.code}"></span>
+            <span class="text-sm font-normal opacity-60" th:text="'(' + ${#lists.size(g.items)} + ' entries)'"></span>
+            <span th:if="${g.changed}" class="badge badge-sm badge-warning ml-2">differs from published</span>
+        </h2>
+        <div class="overflow-x-auto">
+            <table class="table table-sm table-zebra">
+                <thead><tr><th>#</th><th th:each="f : ${g.fields}" th:title="${f.label}" th:text="${f.fieldCode}"></th></tr></thead>
+                <tbody>
+                <tr th:each="item, it : ${g.items}">
+                    <td th:text="${it.count}"></td>
+                    <td th:each="f : ${g.fields}" th:text="${item[f.fieldCode]}"></td>
+                </tr>
+                </tbody>
+            </table>
+        </div>
+        <p th:if="${#lists.isEmpty(g.items)}" class="text-sm opacity-60">No entries</p>
+    </div>
+
+    <div class="card bg-base-100 shadow-xl p-6">
+        <h2 class="font-bold mb-2" th:text="'History (' + (${alpha} ? 'Alpha' : 'Beta') + ')'"></h2>
+        <table class="table table-sm">
+            <thead><tr><th>Valid from</th><th>Valid to</th><th>Recorded by</th><th>Reason</th><th></th></tr></thead>
+            <tbody>
+            <tr th:each="h : ${history}" th:classappend="${h.id == record.id} ? 'bg-base-200'">
+                <td th:text="${#temporals.format(h.validFrom, 'yyyy-MM-dd HH:mm:ss')}"></td>
+                <td th:text="${h.validTo} == null ? 'current' : ${#temporals.format(h.validTo, 'yyyy-MM-dd HH:mm:ss')}"></td>
+                <td th:text="${h.recordedBy}"></td>
+                <td th:text="${h.comment} ?: ''"></td>
+                <td><a th:if="${h.id != record.id}" class="link link-primary text-sm"
+                       th:href="@{/explore/microdata/{fid}/records/{rid}(fid=${flow.id},rid=${h.id})}">show</a></td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+</body>
+</html>

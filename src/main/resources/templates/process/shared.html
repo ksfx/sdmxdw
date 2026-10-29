@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org" data-theme="sdmxdw">
+<head th:replace="~{process/fragments/head :: head('Shared code')}"></head>
+<body class="min-h-screen bg-base-200">
+<div th:replace="~{fragments/nav :: nav}"></div>
+<div class="p-8 space-y-6">
+    <div>
+        <p class="text-sm"><a class="link" th:href="@{/processes}">Processes</a></p>
+        <h1 class="text-2xl font-bold">Shared code</h1>
+        <p class="text-sm opacity-70">Available to all processes: Python modules are importable (<code>from sdmxdw_sdk import ...</code>),
+            R files are loaded with <code>source(file.path(Sys.getenv("SDMXDW_SHARED_DIR"), "sdmxdw.R"))</code>.</p>
+    </div>
+    <div th:replace="~{process/fragments/head :: alerts}"></div>
+    <div th:replace="~{process/fragments/code :: editor('/processes/shared?x=1', '/processes/shared/files')}"></div>
+</div>
+</body>
+</html>

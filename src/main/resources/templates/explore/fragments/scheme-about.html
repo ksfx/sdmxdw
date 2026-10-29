@@ -1,0 +1,12 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<body>
+<div th:fragment="about">
+    <p class="text-xs opacity-60 mb-3" th:text="'Category scheme ' + ${scheme.agencyId} + ':' + ${scheme.artefactId} + '(' + ${scheme.version} + ')'"></p>
+    <!-- the Markdown usually starts with its own heading; only show the name if there is no text -->
+    <h2 class="text-xl font-bold mb-4" th:if="${#strings.isEmpty(descriptionHtml)}" th:text="${scheme.name}"></h2>
+    <div class="markdown-body" th:if="${!#strings.isEmpty(descriptionHtml)}" th:utext="${descriptionHtml}"></div>
+    <p class="opacity-60" th:if="${#strings.isEmpty(descriptionHtml)}">No description available for this category scheme.</p>
+</div>
+</body>
+</html>

@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org" data-theme="sdmxdw">
+<head>
+    <meta charset="UTF-8"/>
+    <title>Microdata flow</title>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.23/dist/full.min.css" rel="stylesheet" type="text/css" />
+    <link rel="stylesheet" href="/css/brand.css" />
+    <link rel="icon" href="/img/favicon.png" />
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="min-h-screen bg-base-200">
+<div th:replace="~{fragments/nav :: nav}"></div>
+<div class="p-8 space-y-6">
+    <div class="card bg-base-100 shadow-xl p-6">
+        <h1 class="text-xl font-bold" th:text="${flow.agencyId} + ':' + ${flow.artefactId} + '(' + ${flow.version} + ')'"></h1>
+        <p class="text-lg" th:text="${flow.name}"></p>
+        <p class="text-sm opacity-70" th:if="${flow.description}" th:text="${flow.description}"></p>
+        <div class="mt-4 space-x-2">
+            <a class="btn btn-primary btn-sm" th:href="@{/explore/microdata/{id}(id=${flow.id})}">View data in explorer</a>
+        </div>
+    </div>
+
+    <div class="card bg-base-100 shadow-xl p-6 max-w-lg">
+        <h2 class="font-bold mb-4">Category</h2>
+        <p class="text-sm opacity-70 mb-2">Current: <span th:text="${currentCategoryLabel}"></span></p>
+        <form method="post" th:action="@{/microdata/{id}/categorisation(id=${flow.id})}" class="flex gap-2">
+            <select class="select select-bordered flex-1" name="categoryId" required>
+                <option th:each="c : ${categoryOptions}" th:value="${c.id}" th:text="${c.label}"></option>
+            </select>
+            <button class="btn btn-sm" type="submit">Assign</button>
+        </form>
+    </div>
+
+
+    <div class="card bg-base-100 shadow-xl p-6">
+        <h2 class="font-bold mb-4">Field catalog</h2>
+        <table class="table">
+            <thead><tr><th>#</th><th>Field code</th><th>Label</th><th>Type</th><th>Codelist</th><th>Required</th><th>Obligation</th><th>Subtype</th><th>Facet slot</th><th>Group</th><th>References</th></tr></thead>
+            <tbody>
+            <tr th:each="field : ${fields}">
+                <td th:text="${field.position}"></td>
+                <td th:text="${field.fieldCode}"></td>
+                <td th:text="${field.label}"></td>
+                <td th:text="${field.dataType}"></td>
+                <td th:text="${field.codelistId} ?: '-'"></td>
+                <td th:text="${field.required} ? 'yes' : 'no'"></td>
+                <td th:text="${field.obligation} ?: '-'"></td>
+                <td>
+                    <span th:if="${field.subtype}" th:text="${field.subtype}"></span>
+                    <span th:if="${field.subtypeRule}" class="text-xs opacity-60" th:text="'(' + ${field.subtypeRule} + ')'"></span>
+                    <span th:unless="${field.subtype}">-</span>
+                </td>
+                <td th:text="${field.facetSlot} ?: '-'"></td>
+                <td th:text="${field.groupCode} ?: '-'"></td>
+                <td>
+                    <a th:if="${field.referencedFlowId}" class="link link-primary" th:href="@{/microdata/{id}(id=${field.referencedFlowId})}" th:text="'Flow #' + ${field.referencedFlowId}"></a>
+                    <span th:unless="${field.referencedFlowId}">-</span>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="card bg-base-100 shadow-xl p-6 max-w-lg">
+        <h2 class="font-bold mb-4">Add field</h2>
+        <form method="post" th:action="@{/microdata/{id}/fields(id=${flow.id})}" class="space-y-2">
+            <input class="input input-bordered w-full" name="fieldCode" placeholder="Field code (e.g. INDUSTRY)" required/>
+            <input class="input input-bordered w-full" name="label" placeholder="Label" required/>
+            <select class="select select-bordered w-full" name="dataType" required>
+                <option th:each="type : ${fieldDataTypes}" th:value="${type}" th:text="${type}"></option>
+            </select>
+            <select class="select select-bordered w-full" name="codelistId">
+                <option value="">(no codelist - uncoded field)</option>
+                <option th:each="cl : ${codelists}" th:value="${cl.id}" th:text="${cl.artefactId} + ' - ' + ${cl.name}"></option>
+            </select>
+            <select class="select select-bordered w-full" name="facetSlot">
+                <option value="">(no facet - JSON payload only)</option>
+                <option th:each="slot : ${facetSlots}" th:value="${slot}" th:text="${slot}"></option>
+            </select>
+            <label class="label cursor-pointer gap-2">
+                <input type="checkbox" class="checkbox" name="required" value="true"/>
+                <span>Required field</span>
+            </label>
+            <div class="grid grid-cols-3 gap-2">
+                <select class="select select-bordered select-sm" name="obligation" title="Obligation as specified by the source model">
+                    <option value="">(obligation)</option>
+                    <option value="M">M - mandatory</option>
+                    <option value="M*">M* - mandatory with dependencies</option>
+                    <option value="O">O - optional</option>
+                </select>
+                <input class="input input-bordered input-sm" name="subtype" placeholder="Subtype (optional)"/>
+                <input class="input input-bordered input-sm" name="subtypeRule" placeholder="Rule, e.g. REG-0017"/>
+            </div>
+            <button class="btn btn-primary" type="submit">Add</button>
+        </form>
+    </div>
+
+    <div class="card bg-base-100 shadow-xl p-6 max-w-lg">
+        <h2 class="font-bold mb-4">Add group field</h2>
+        <p class="text-sm opacity-70 mb-2">
+            For attributes that can occur multiple times per record (e.g. several items of collateral per
+            loan). Several fields sharing the same group code belong together and repeat as a set - no
+            facet, no new table, stays within the same generic record.
+        </p>
+        <form method="post" th:action="@{/microdata/{id}/group-fields(id=${flow.id})}" class="space-y-2">
+            <input class="input input-bordered w-full" name="groupCode" placeholder="Group code (e.g. COLLATERAL)" required/>
+            <input class="input input-bordered w-full" name="fieldCode" placeholder="Field code (e.g. COLLATERAL_ITEM_TYPE)" required/>
+            <input class="input input-bordered w-full" name="label" placeholder="Label" required/>
+            <select class="select select-bordered w-full" name="dataType" required>
+                <option th:each="type : ${fieldDataTypes}" th:value="${type}" th:text="${type}"></option>
+            </select>
+            <select class="select select-bordered w-full" name="codelistId">
+                <option value="">(no codelist - uncoded field)</option>
+                <option th:each="cl : ${codelists}" th:value="${cl.id}" th:text="${cl.artefactId} + ' - ' + ${cl.name}"></option>
+            </select>
+            <label class="label cursor-pointer gap-2">
+                <input type="checkbox" class="checkbox" name="required" value="true"/>
+                <span>Required field (per instance)</span>
+            </label>
+            <div class="grid grid-cols-3 gap-2">
+                <select class="select select-bordered select-sm" name="obligation" title="Obligation as specified by the source model">
+                    <option value="">(obligation)</option>
+                    <option value="M">M - mandatory</option>
+                    <option value="M*">M* - mandatory with dependencies</option>
+                    <option value="O">O - optional</option>
+                </select>
+                <input class="input input-bordered input-sm" name="subtype" placeholder="Subtype (optional)"/>
+                <input class="input input-bordered input-sm" name="subtypeRule" placeholder="Rule, e.g. REG-0017"/>
+            </div>
+            <button class="btn btn-primary" type="submit">Add</button>
+        </form>
+    </div>
+
+    <div class="card bg-base-100 shadow-xl p-6 max-w-lg">
+        <h2 class="font-bold mb-4">Add reference field</h2>
+        <p class="text-sm opacity-70 mb-2">
+            For fields whose value is the entity ID of a record in another microdata flow (e.g.
+            "Gegenpartei" on a loan) - instead of a fixed codelist, the value is validated against the
+            target flow. Linking flows (e.g. Rahmen-Sicherheit) usually consist of just two such reference
+            fields.
+        </p>
+        <form method="post" th:action="@{/microdata/{id}/reference-fields(id=${flow.id})}" class="space-y-2">
+            <input class="input input-bordered w-full" name="fieldCode" placeholder="Field code (e.g. GEGENPARTEI)" required/>
+            <input class="input input-bordered w-full" name="label" placeholder="Label" required/>
+            <select class="select select-bordered w-full" name="referencedFlowId" required>
+                <option th:each="mf : ${microdataFlows}" th:value="${mf.id}" th:text="${mf.agencyId} + ':' + ${mf.artefactId}"></option>
+            </select>
+            <select class="select select-bordered w-full" name="facetSlot">
+                <option value="">(no facet - JSON payload only)</option>
+                <option th:each="slot : ${facetSlots}" th:value="${slot}" th:text="${slot}"></option>
+            </select>
+            <label class="label cursor-pointer gap-2">
+                <input type="checkbox" class="checkbox" name="required" value="true"/>
+                <span>Required field</span>
+            </label>
+            <div class="grid grid-cols-3 gap-2">
+                <select class="select select-bordered select-sm" name="obligation" title="Obligation as specified by the source model">
+                    <option value="">(obligation)</option>
+                    <option value="M">M - mandatory</option>
+                    <option value="M*">M* - mandatory with dependencies</option>
+                    <option value="O">O - optional</option>
+                </select>
+                <input class="input input-bordered input-sm" name="subtype" placeholder="Subtype (optional)"/>
+                <input class="input input-bordered input-sm" name="subtypeRule" placeholder="Rule, e.g. REG-0017"/>
+            </div>
+            <button class="btn btn-primary" type="submit">Add</button>
+        </form>
+    </div>
+
+
+    <div class="card bg-base-100 shadow-xl p-6 max-w-lg">
+        <h2 class="font-bold mb-4">Aggregation bridge to SDMX</h2>
+        <p class="text-sm opacity-70 mb-2">
+            Linked dataflow:
+            <span th:text="${flow.linkedDataflowId} ?: '(none)'"></span>.
+            The target DSD's non-time dimensions must line up positionally with Facet1..4, and the target
+            DSD needs exactly one measure (the count).
+        </p>
+        <form method="post" th:action="@{/microdata/{id}/link-dataflow(id=${flow.id})}" class="flex gap-2 mb-4">
+            <select class="select select-bordered flex-1" name="dataflowId" required>
+                <option th:each="df : ${dataflows}" th:value="${df.id}" th:text="${df.agencyId} + ':' + ${df.artefactId}"></option>
+            </select>
+            <button class="btn btn-sm" type="submit">Link</button>
+        </form>
+        <p class="text-sm opacity-70">Running the aggregation is a data operation: use
+            <a class="link" th:href="@{/explore/microdata/{id}(id=${flow.id})}">"Aggregate &amp; publish to SDMX"</a> on the flow page in the explorer.</p>
+    </div>
+</div>
+</body>
+</html>

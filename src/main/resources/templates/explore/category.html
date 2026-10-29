@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org" data-theme="sdmxdw">
+<head>
+    <meta charset="UTF-8"/>
+    <title>Category</title>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.23/dist/full.min.css" rel="stylesheet" type="text/css" />
+    <link rel="stylesheet" href="/css/brand.css" />
+    <link rel="icon" href="/img/favicon.png" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/htmx.org@2.0.3"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="/js/dimension-filter.js"></script>
+</head>
+<body class="min-h-screen bg-base-200">
+<div th:replace="~{fragments/nav :: nav}"></div>
+<div class="p-8 space-y-6">
+    <h1 class="text-xl font-bold" th:text="${category.code} + ' - ' + ${category.name}"></h1>
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div class="card bg-base-100 shadow-xl p-6 overflow-auto" style="max-height: 75vh;">
+            <p th:if="${#lists.isEmpty(dataflows)}" class="opacity-60">No dataflows in this category.</p>
+            <details th:each="df : ${dataflows}"
+                      th:attr="hx-get=@{/explore/dataflows/{id}/series-fragment(id=${df.id})},hx-trigger='toggle once',hx-target='find .series-slot',hx-swap='innerHTML'">
+                <summary class="cursor-pointer">
+                    <span th:text="${df.artefactId}"></span>
+                    <span class="opacity-70" th:text="'- ' + ${df.name}"></span>
+                </summary>
+                <div class="series-slot pl-4 mt-1">
+                    <span class="loading loading-spinner loading-xs"></span>
+                </div>
+            </details>
+        </div>
+        <div class="card bg-base-100 shadow-xl p-6 overflow-auto" style="max-height: 75vh;" id="detail-panel">
+            <p class="opacity-60">Expand a dataflow and select a series to see it as a chart here.</p>
+        </div>
+    </div>
+    <a class="btn btn-sm" th:href="@{/explore}">Back to tree</a>
+</div>
+</body>
+</html>

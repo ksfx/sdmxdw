@@ -1,0 +1,31 @@
+<div xmlns:th="http://www.thymeleaf.org">
+    <form class="flex flex-wrap gap-1 mb-2 items-end"
+          th:attr="hx-get=@{/explore/microdata/{id}/records-fragment(id=${flowId})}"
+          hx-target="this" hx-swap="outerHTML">
+        <input type="hidden" name="reportingPeriod" th:value="${reportingPeriod}"/>
+        <input th:if="${facet1Label}" class="input input-bordered input-xs" name="facet1" th:value="${facet1}" th:placeholder="${facet1Label}"/>
+        <input th:if="${facet2Label}" class="input input-bordered input-xs" name="facet2" th:value="${facet2}" th:placeholder="${facet2Label}"/>
+        <input th:if="${facet3Label}" class="input input-bordered input-xs" name="facet3" th:value="${facet3}" th:placeholder="${facet3Label}"/>
+        <input th:if="${facet4Label}" class="input input-bordered input-xs" name="facet4" th:value="${facet4}" th:placeholder="${facet4Label}"/>
+        <input class="input input-bordered input-xs" name="q" th:value="${q}" placeholder="Free text"/>
+        <button class="btn btn-xs" type="submit">Filter</button>
+    </form>
+    <p class="text-xs opacity-60 mb-1" th:text="${result.totalCount()} + ' results'"></p>
+    <p th:if="${#lists.isEmpty(result.records())}" class="text-xs opacity-60">No records</p>
+    <div th:each="rec : ${result.records()}">
+        <a class="link link-primary link-hover text-sm"
+           th:text="${rec.entityId} + ' @ ' + ${rec.reportingPeriod}"
+           th:href="@{/explore/microdata/{fid}/records/{rid}(fid=${flowId},rid=${rec.id})}"
+           th:attr="hx-get=@{/explore/microdata/{fid}/records/{rid}/panel(fid=${flowId},rid=${rec.id})}"
+           hx-target="#detail-panel" hx-swap="innerHTML"></a>
+    </div>
+    <div class="flex flex-wrap gap-1 mt-2" th:if="${totalPages > 1}">
+        <a th:each="p : ${#numbers.sequence(0, totalPages - 1)}"
+           class="btn btn-xs"
+           th:classappend="${p == result.page()} ? 'btn-primary' : ''"
+           th:href="@{/explore/microdata/{id}/records-fragment(id=${flowId},reportingPeriod=${reportingPeriod},facet1=${facet1},facet2=${facet2},facet3=${facet3},facet4=${facet4},q=${q},page=${p})}"
+           th:attr="hx-get=@{/explore/microdata/{id}/records-fragment(id=${flowId},reportingPeriod=${reportingPeriod},facet1=${facet1},facet2=${facet2},facet3=${facet3},facet4=${facet4},q=${q},page=${p})}"
+           hx-target="closest .records-slot" hx-swap="innerHTML"
+           th:text="${p + 1}"></a>
+    </div>
+</div>

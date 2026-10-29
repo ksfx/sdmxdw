@@ -1,0 +1,43 @@
+HELP.md
+target/
+.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+
+### STS ###
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+
+### IntelliJ IDEA ###
+.idea
+*.iws
+*.iml
+*.ipr
+
+### NetBeans ###
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+build/
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+### VS Code ###
+.vscode/
+
+### SDMxDW runtime data (never commit) ###
+# secret key of the process secrets, run folders, Git working copy of the process folder
+data/
+# process folder: runtime content, linked to its own repository via Processes -> Git (#20)
+processes/
+# Python environment of the plugins / processes
+plugins/.venv/
+__pycache__/
+*.pyc

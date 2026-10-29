@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org" data-theme="sdmxdw">
+<head>
+    <meta charset="UTF-8"/>
+    <title th:text="'Edit ' + ${record.entityId}">Edit record</title>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.23/dist/full.min.css" rel="stylesheet" type="text/css" />
+    <link rel="stylesheet" href="/css/brand.css" />
+    <link rel="icon" href="/img/favicon.png" />
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="min-h-screen bg-base-200">
+<div th:replace="~{fragments/nav :: nav}"></div>
+<form class="p-8 space-y-6 max-w-5xl" method="post"
+      th:action="@{/explore/microdata/{fid}/records/{rid}/correct(fid=${flow.id},rid=${record.id})}">
+    <div class="card bg-base-100 shadow-xl p-6">
+        <p class="text-sm opacity-70" th:text="${flow.agencyId} + ':' + ${flow.artefactId} + ' - ' + ${flow.name}"></p>
+        <h1 class="text-2xl font-bold"><span>Edit </span><span class="font-mono" th:text="${record.entityId}"></span>
+            <span class="text-base font-normal" th:text="' @ ' + ${record.reportingPeriod}"></span></h1>
+        <p class="text-sm opacity-70 mt-1">The corrected record is saved as a new <b>Alpha</b> version and checked exactly like a delivery
+            (required fields, codelists, references). Economists see it after the next promotion.</p>
+        <div th:if="${error}" class="alert alert-error mt-4 py-2"><span th:text="${error}"></span></div>
+    </div>
+
+    <div class="card bg-base-100 shadow-xl p-6">
+        <div class="grid md:grid-cols-2 gap-x-6 gap-y-2">
+            <div th:each="f : ${fields}" class="form-control">
+                <label class="label py-1">
+                    <span class="label-text text-sm" th:title="${f.code}">
+                        <span th:text="${f.label}"></span><span th:if="${f.required}" class="text-error"> *</span>
+                    </span>
+                    <span class="label-text-alt opacity-60" th:text="${f.referencedFlow} != null ? '→ ' + ${f.referencedFlow} : ${f.dataType}"></span>
+                </label>
+                <select th:if="${!#lists.isEmpty(f.options)}" class="select select-bordered select-sm" th:name="'v.' + ${f.code}" th:required="${f.required}">
+                    <option value="" th:if="${!f.required}">(empty)</option>
+                    <option th:each="o : ${f.options}" th:value="${o.code}" th:text="${o.code} + ' - ' + ${o.name}" th:selected="${o.code == f.value}"></option>
+                </select>
+                <select th:if="${#lists.isEmpty(f.options) and f.dataType.name() == 'BOOLEAN'}" class="select select-bordered select-sm" th:name="'v.' + ${f.code}" th:required="${f.required}">
+                    <option value="" th:if="${!f.required}">(empty)</option>
+                    <option value="true" th:selected="${f.value == 'true'}">true</option>
+                    <option value="false" th:selected="${f.value == 'false'}">false</option>
+                </select>
+                <input th:if="${#lists.isEmpty(f.options) and f.dataType.name() != 'BOOLEAN'}" class="input input-bordered input-sm"
+                       th:type="${f.inputType}" step="any" th:name="'v.' + ${f.code}" th:value="${f.value}" th:required="${f.required}"/>
+            </div>
+        </div>
+    </div>
+
+    <div class="card bg-base-100 shadow-xl p-6" th:each="g : ${groups}">
+        <h2 class="font-bold mb-1" th:text="${g.code}"></h2>
+        <p class="text-xs opacity-60 mb-2">Empty rows are ignored; tick "remove" to delete an entry.</p>
+        <div class="overflow-x-auto">
+            <table class="table table-sm">
+                <thead><tr><th>#</th><th th:each="f : ${g.fields}" th:title="${f.label}" th:text="${f.code}"></th><th>remove</th></tr></thead>
+                <tbody>
+                <tr th:each="item, it : ${g.items}">
+                    <td th:text="${it.count}"></td>
+                    <td th:each="f : ${g.fields}">
+                        <select th:if="${!#lists.isEmpty(f.options)}" class="select select-bordered select-xs" th:name="'g.' + ${g.code} + '.' + ${it.index} + '.' + ${f.code}">
+                            <option value=""></option>
+                            <option th:each="o : ${f.options}" th:value="${o.code}" th:text="${o.code}" th:title="${o.name}" th:selected="${o.code == item[f.code]}"></option>
+                        </select>
+                        <input th:if="${#lists.isEmpty(f.options)}" class="input input-bordered input-xs w-32" th:type="${f.inputType}" step="any"
+                               th:name="'g.' + ${g.code} + '.' + ${it.index} + '.' + ${f.code}" th:value="${item[f.code]}"/>
+                    </td>
+                    <td><input type="checkbox" class="checkbox checkbox-xs" th:name="'g.' + ${g.code} + '.' + ${it.index} + '._remove'"/></td>
+                </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="card bg-base-100 shadow-xl p-6">
+        <div class="flex flex-wrap gap-3 items-end">
+            <div class="form-control">
+                <label class="label text-sm py-1">Reason (optional)</label>
+                <input class="input input-bordered input-sm w-96" name="comment" th:value="${comment}" placeholder="e.g. corrected after query to reporting bank"/>
+            </div>
+            <button class="btn btn-primary btn-sm" type="submit">Save in Alpha</button>
+            <a class="btn btn-sm" th:href="@{/explore/microdata/{fid}/records/{rid}(fid=${flow.id},rid=${record.id})}">Cancel</a>
+        </div>
+    </div>
+</form>
+</body>
+</html>

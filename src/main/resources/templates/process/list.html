@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org" data-theme="sdmxdw">
+<head th:replace="~{process/fragments/head :: head('Processes')}"></head>
+<body class="min-h-screen bg-base-200">
+<div th:replace="~{fragments/nav :: nav}"></div>
+<div class="p-8 space-y-6">
+    <div class="flex flex-wrap items-center justify-between gap-4">
+        <div>
+            <h1 class="text-2xl font-bold">Processes</h1>
+            <p class="text-sm opacity-70">Imports, transformations and analyses as Python or R scripts in the process folder.
+                Steps hand over their results as files; SDMxDW loads them into Alpha.</p>
+        </div>
+        <div class="flex gap-2">
+            <a class="btn btn-sm" th:href="@{/processes/shared}">Shared code</a>
+            <a class="btn btn-sm" th:href="@{/processes/secrets}">Secrets</a>
+            <a class="btn btn-sm" th:href="@{/processes/git}">Git</a>
+            <button class="btn btn-sm btn-primary" onclick="document.getElementById('new-process').showModal()">New process</button>
+        </div>
+    </div>
+    <div th:replace="~{process/fragments/head :: alerts}"></div>
+
+    <div class="card bg-base-100 shadow-xl p-6">
+        <div class="overflow-x-auto">
+            <table class="table table-sm">
+                <thead><tr><th>Process</th><th>Steps</th><th>Schedule</th><th>Last run</th><th>Active</th><th></th></tr></thead>
+                <tbody>
+                <tr th:each="r : ${rows}" th:with="p=${r.process}">
+                    <td>
+                        <a class="link link-primary font-semibold" th:href="@{/processes/{id}(id=${p.id})}" th:text="${p.name}"></a>
+                        <div class="text-xs opacity-60 font-mono" th:text="${p.folder} + '/'"></div>
+                        <div class="text-xs opacity-70 max-w-md truncate" th:if="${p.description}" th:title="${p.description}" th:text="${p.description}"></div>
+                    </td>
+                    <td class="text-xs">
+                        <span th:each="s, it : ${p.steps}" th:text="${s.stepKey} + (${it.last} ? '' : ' → ')"></span>
+                        <span th:if="${#lists.isEmpty(p.steps)}" class="text-warning">no steps</span>
+                    </td>
+                    <td class="text-xs">
+                        <span th:if="${p.schedule == null}" class="opacity-60">manual</span>
+                        <span th:if="${p.schedule != null}" class="font-mono" th:text="${p.schedule}"></span>
+                        <div th:if="${r.nextRuns != null and p.enabled}" class="opacity-60" th:text="'next: ' + ${#strings.substringBefore(r.nextRuns + ',', ',')}"></div>
+                    </td>
+                    <td class="text-xs whitespace-nowrap">
+                        <a th:if="${r.lastRun}" th:href="@{/processes/{id}/runs/{rid}(id=${p.id},rid=${r.lastRun.id})}">
+                            <span th:replace="~{process/fragments/head :: status(${r.lastRun.status.name()})}"></span>
+                            <span th:if="${r.lastRun.dryRun}" class="badge badge-sm badge-outline">dry run</span>
+                            <span class="opacity-70" th:text="${#temporals.format(r.lastRun.queuedAt, 'yyyy-MM-dd HH:mm')}"></span>
+                        </a>
+                        <span th:unless="${r.lastRun}" class="opacity-60">never</span>
+                    </td>
+                    <td>
+                        <form method="post" th:action="@{/processes/{id}/toggle(id=${p.id})}">
+                            <input type="hidden" name="back" value="list"/>
+                            <input type="hidden" name="enabled" th:value="${!p.enabled}"/>
+                            <input type="checkbox" class="toggle toggle-sm toggle-success" th:checked="${p.enabled}" onchange="this.form.submit()"
+                                   th:title="${p.enabled} ? 'Active - click to pause' : 'Paused - click to activate'"/>
+                        </form>
+                    </td>
+                    <td class="text-right whitespace-nowrap">
+                        <span th:if="${r.running}" class="badge badge-info badge-sm">running</span>
+                        <a th:if="${r.hasParams}" class="btn btn-xs btn-primary" th:href="@{/processes/{id}/run(id=${p.id})}">Run…</a>
+                        <form th:unless="${r.hasParams}" method="post" th:action="@{/processes/{id}/run(id=${p.id})}" class="inline">
+                            <button class="btn btn-xs btn-primary" type="submit" th:disabled="${#lists.isEmpty(p.steps)}">Run</button>
+                        </form>
+                    </td>
+                </tr>
+                </tbody>
+            </table>
+        </div>
+        <p th:if="${#lists.isEmpty(rows)}" class="opacity-60">No processes yet.</p>
+    </div>
+
+    <dialog id="new-process" class="modal">
+        <form method="post" th:action="@{/processes}" class="modal-box space-y-3">
+            <h3 class="font-bold text-lg">New process</h3>
+            <input class="input input-bordered w-full" name="name" placeholder="Name, e.g. EKE quarterly delivery" required
+                   oninput="const f=this.form.folder; if(!f.dataset.touched){f.value=this.value.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'')}"/>
+            <input class="input input-bordered w-full font-mono" name="folder" placeholder="folder" oninput="this.dataset.touched=1"/>
+            <textarea class="textarea textarea-bordered w-full" name="description" placeholder="Description (optional)"></textarea>
+            <p class="text-xs opacity-60">Creates the folder with a starter script <code>main.py</code> and one step.</p>
+            <div class="modal-action">
+                <button type="button" class="btn" onclick="this.closest('dialog').close()">Cancel</button>
+                <button class="btn btn-primary" type="submit">Create</button>
+            </div>
+        </form>
+    </dialog>
+</div>
+</body>
+</html>

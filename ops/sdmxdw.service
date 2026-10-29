@@ -1,0 +1,20 @@
+[Unit]
+Description=SDMxDW application server
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=sdmxdw
+Group=sdmxdw
+WorkingDirectory=/opt/sdmxdw
+EnvironmentFile=/opt/sdmxdw/sdmxdw.env
+ExecStart=/usr/bin/java -jar /opt/sdmxdw/sdmxdw.jar
+SuccessExitStatus=143
+Restart=on-failure
+RestartSec=5
+# Actuator's /actuator/health backs the readiness/liveness probes below.
+TimeoutStartSec=120
+
+[Install]
+WantedBy=multi-user.target

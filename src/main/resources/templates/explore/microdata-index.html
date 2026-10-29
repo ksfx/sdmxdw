@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org" data-theme="sdmxdw">
+<head>
+    <meta charset="UTF-8"/>
+    <title>Explore microdata</title>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.23/dist/full.min.css" rel="stylesheet" type="text/css" />
+    <link rel="stylesheet" href="/css/brand.css" />
+    <link rel="icon" href="/img/favicon.png" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/htmx.org@2.0.3"></script>
+    <script src="https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
+    <style>
+        /* expanded entities have no hover tooltip; vis-network would still show an empty box */
+        div.vis-tooltip:empty { display: none !important; }
+    </style>
+</head>
+<body class="min-h-screen bg-base-200">
+<div th:replace="~{fragments/nav :: nav}"></div>
+<div class="p-8 space-y-6">
+    <form method="get" class="flex items-center gap-2">
+        <label class="text-sm font-semibold" for="reportingPeriodSelect">Reference date / reporting period</label>
+        <select id="reportingPeriodSelect" class="select select-bordered select-sm" name="reportingPeriod" onchange="this.form.submit()">
+            <option value="" th:selected="${reportingPeriod == null or #strings.isEmpty(reportingPeriod)}">All periods</option>
+            <option th:each="p : ${reportingPeriods}" th:value="${p}" th:text="${p}" th:selected="${p == reportingPeriod}"></option>
+        </select>
+    </form>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div class="card bg-base-100 shadow-xl p-6 overflow-auto" style="max-height: 80vh;">
+            <div th:each="tree : ${trees}" class="mb-6">
+                <div class="flex items-center justify-between gap-2 mb-4">
+                    <h1 class="text-xl font-bold" th:text="${tree.artefactId} + ' - ' + ${tree.name}"></h1>
+                    <div class="flex gap-2 shrink-0">
+                    <button type="button" class="btn btn-sm btn-ghost border-base-300" th:if="${tree.hasDescription}"
+                            th:attr="hx-get=@{/explore/category-schemes/{id}/about(id=${tree.id})}"
+                            hx-target="#detail-panel" hx-swap="innerHTML">About</button>
+                    <button type="button" class="btn btn-sm btn-secondary"
+                            th:attr="data-scheme-id=${tree.id}"
+                            onclick="openRelations(this.dataset.schemeId)">Show relations</button>
+                    </div>
+                </div>
+                <div th:replace="~{::nodeList(${tree.roots})}"></div>
+            </div>
+
+            <div th:if="${not #lists.isEmpty(uncategorizedFlows)}" class="mt-6">
+                <h2 class="font-bold mb-2 opacity-70">Uncategorized</h2>
+                <ul class="space-y-1">
+                    <li th:each="flow : ${uncategorizedFlows}">
+                        <details th:attr="hx-get=@{/explore/microdata/{id}/records-fragment(id=${flow.id},reportingPeriod=${reportingPeriod})},hx-trigger='toggle once',hx-target='find .records-slot',hx-swap='innerHTML'">
+                            <summary class="cursor-pointer">
+                                <span class="font-mono text-sm" th:text="${flow.agencyId} + ':' + ${flow.artefactId}"></span>
+                                <span class="opacity-70" th:text="'- ' + ${flow.name}"></span>
+                                <a class="link link-primary text-xs ml-2" title="Open the flow page: all records, filters, export"
+                                   th:href="@{/explore/microdata/{id}(id=${flow.id},reportingPeriod=${reportingPeriod})}" onclick="event.stopPropagation()">open ›</a>
+                            </summary>
+                            <div class="records-slot pl-4 mt-1">
+                                <span class="loading loading-spinner loading-xs"></span>
+                            </div>
+                        </details>
+                    </li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="card bg-base-100 shadow-xl p-6 overflow-auto" style="max-height: 80vh;" id="detail-panel">
+            <p class="opacity-60">
+                Expand a category and a flow on the left and select a record. Reference fields in the
+                record are clickable and load the linked record directly here.
+            </p>
+        </div>
+    </div>
+
+    <ul th:fragment="nodeList(nodes)" class="pl-4">
+        <li th:each="node : ${nodes}">
+            <details th:attr="hx-get=${node.flowCount > 0} ? @{/explore/microdata/categories/{id}/flows-fragment(id=${node.id},reportingPeriod=${reportingPeriod})} : null,hx-trigger=${node.flowCount > 0} ? 'toggle once' : null,hx-target=${node.flowCount > 0} ? 'find .flow-slot' : null,hx-swap='innerHTML'">
+                <summary class="cursor-pointer">
+                    <span th:text="${node.code} + ' - ' + ${node.name}"></span>
+                    <span class="text-xs opacity-60 ml-2" th:if="${node.flowCount > 0}" th:text="'(' + ${node.flowCount} + ' Flow(s))'"></span>
+                </summary>
+                <div class="flow-slot pl-4 mt-1" th:if="${node.flowCount > 0}">
+                    <span class="loading loading-spinner loading-xs"></span>
+                </div>
+                <div th:if="${not #lists.isEmpty(node.children)}" th:replace="~{::nodeList(${node.children})}"></div>
+            </details>
+        </li>
+    </ul>
+</div>
+<div id="relations-overlay" class="fixed inset-0 z-50 hidden bg-black/50 backdrop-blur-sm p-6">
+    <div class="bg-base-100 rounded-box shadow-2xl h-full flex flex-col">
+        <div class="flex items-center justify-between px-6 py-3 border-b border-base-300">
+            <div>
+                <h2 class="text-lg font-bold" id="relations-title"></h2>
+                <p class="text-xs opacity-60">
+                    Click an entity to show or hide its attributes, drag to rearrange, scroll to zoom,
+                    double-click to open the flow. Arrows point from the referencing field to the
+                    referenced entity. M = mandatory, M* = mandatory with dependencies, ▸ = subtype.
+                </p>
+            </div>
+            <div class="flex items-center gap-4 text-xs">
+                <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 rounded-sm" style="background:#053771"></span>Entity</span>
+                <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 rounded-full" style="background:#13ad8f"></span>Linking entity</span>
+                <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 rounded-sm border border-dashed border-gray-500"></span>Outside scheme</span>
+                <label class="label cursor-pointer gap-2">
+                    <input type="checkbox" class="toggle toggle-sm toggle-primary" id="relations-all-attributes" onchange="setAllAttributes(this.checked)"/>
+                    <span>All attributes</span>
+                </label>
+                <button type="button" class="btn btn-sm" onclick="relationsNetwork &amp;&amp; relationsNetwork.fit({animation: true})">Fit</button>
+                <button type="button" class="btn btn-sm btn-primary" onclick="closeRelations()">Close</button>
+            </div>
+        </div>
+        <div id="relations-canvas" class="flex-1"></div>
+    </div>
+</div>
+
+<script>
+    let relationsNetwork = null;
+
+    function closeRelations() {
+        document.getElementById('relations-overlay').classList.add('hidden');
+    }
+
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeRelations(); });
+
+    function fieldTooltip(node) {
+        const el = document.createElement('div');
+        el.style.cssText = 'font: 12px ui-sans-serif, system-ui; max-width: 360px;';
+        const title = document.createElement('div');
+        title.style.cssText = 'font-weight: 700; margin-bottom: 4px;';
+        title.textContent = node.name + ' (' + node.artefactId + ')';
+        el.appendChild(title);
+        node.fields.forEach(f => {
+            const row = document.createElement('div');
+            const type = f.type === 'REF' ? '→ ref' : f.type.toLowerCase();
+            row.textContent = (f.required ? '● ' : '○ ') + f.code + (f.groupCode ? ' [' + f.groupCode + ']' : '') + ' : ' + type;
+            row.style.color = f.type === 'REF' ? '#053771' : '#333';
+            el.appendChild(row);
+        });
+        if (node.fields.length === 0) el.appendChild(document.createTextNode('(no fields)'));
+        return el;
+    }
+
+    let relationsGraph = null;
+    let relationsNodes = null;
+    const expandedNodes = new Set();
+
+    function attributeLines(node) {
+        const line = f => {
+            const prefix = f.type === 'REF' ? 'FK ' : '';
+            const ob = f.obligation || (f.required ? 'M' : '');
+            return prefix + f.label + (ob ? '  <b>' + ob + '</b>' : '');
+        };
+        const lines = ['<code>PK ' + node.name + ' ID</code>'];
+        node.fields.filter(f => !f.subtype).forEach(f => lines.push(line(f)));
+        const subtypes = [];
+        node.fields.filter(f => f.subtype).forEach(f => { if (!subtypes.includes(f.subtype)) subtypes.push(f.subtype); });
+        subtypes.forEach(st => {
+            const fields = node.fields.filter(f => f.subtype === st);
+            const rule = fields.find(f => f.subtypeRule);
+            lines.push('<i>▸ ' + st + (rule ? ' (' + rule.subtypeRule + ')' : '') + '</i>');
+            fields.forEach(f => lines.push('   ' + line(f)));
+        });
+        return lines;
+    }
+
+    function nodeView(n) {
+        const expanded = expandedNodes.has(n.id);
+        return {
+            id: n.id,
+            label: expanded
+                ? '<b>' + n.name + '</b>\n' + attributeLines(n).join('\n')
+                : '<b>' + n.name + '</b>\n<i>' + n.fields.length + ' fields</i>',
+            font: {
+                multi: 'html', size: expanded ? 14 : 20, align: expanded ? 'left' : 'center',
+                color: n.external ? '#444' : '#ffffff',
+                bold: {color: n.external ? '#111' : '#ffffff'},
+                ital: {color: n.external ? '#555' : '#cfe3ff'},
+                mono: {color: n.external ? '#555' : '#cfe3ff', size: 13},
+            },
+            widthConstraint: expanded ? {minimum: 220, maximum: 420} : {minimum: 130},
+            title: expanded ? '' : fieldTooltip(n),
+            chosen: {label: false, node: true},
+        };
+    }
+
+    // vis-network's physics treat nodes as circles, so tall attribute boxes still overlap after a
+    // re-run - push overlapping bounding boxes apart instead, keeping the relative layout intact
+    function resolveOverlaps(padding = 40) {
+        const ids = relationsNodes.getIds();
+        const pos = relationsNetwork.getPositions(ids);
+        const size = {};
+        ids.forEach(id => {
+            const b = relationsNetwork.getBoundingBox(id);
+            size[id] = {w: b.right - b.left, h: b.bottom - b.top};
+        });
+        for (let iter = 0; iter < 400; iter++) {
+            let moved = false;
+            for (let i = 0; i < ids.length; i++) {
+                for (let j = i + 1; j < ids.length; j++) {
+                    const a = ids[i], b = ids[j];
+                    const dx = pos[b].x - pos[a].x, dy = pos[b].y - pos[a].y;
+                    const ox = (size[a].w + size[b].w) / 2 + padding - Math.abs(dx);
+                    const oy = (size[a].h + size[b].h) / 2 + padding - Math.abs(dy);
+                    if (ox > 0 && oy > 0) {
+                        if (ox < oy) {
+                            const shift = (dx >= 0 ? 1 : -1) * ox / 2;
+                            pos[a].x -= shift; pos[b].x += shift;
+                        } else {
+                            const shift = (dy >= 0 ? 1 : -1) * oy / 2;
+                            pos[a].y -= shift; pos[b].y += shift;
+                        }
+                        moved = true;
+                    }
+                }
+            }
+            if (!moved) break;
+        }
+        ids.forEach(id => relationsNetwork.moveNode(id, pos[id].x, pos[id].y));
+    }
+
+    function relayout(fit) {
+        relationsNetwork.redraw();
+        setTimeout(() => {
+            resolveOverlaps();
+            if (fit) relationsNetwork.fit({animation: true});
+        }, 50);
+    }
+
+    function toggleAttributes(nodeId) {
+        expandedNodes.has(nodeId) ? expandedNodes.delete(nodeId) : expandedNodes.add(nodeId);
+        relationsNodes.update(nodeView(relationsGraph.nodes.find(n => n.id === nodeId)));
+        relayout(false);
+        if (expandedNodes.has(nodeId)) {
+            setTimeout(() => relationsNetwork.focus(nodeId, {animation: true}), 120);
+        }
+    }
+
+    function setAllAttributes(show) {
+        expandedNodes.clear();
+        if (show) relationsGraph.nodes.forEach(n => expandedNodes.add(n.id));
+        relationsNodes.update(relationsGraph.nodes.map(nodeView));
+        relayout(true);
+    }
+
+    async function openRelations(schemeId) {
+        const overlay = document.getElementById('relations-overlay');
+        overlay.classList.remove('hidden');
+        const graph = await (await fetch('/explore/microdata/category-schemes/' + schemeId + '/relations')).json();
+        relationsGraph = graph;
+        expandedNodes.clear();
+        document.getElementById('relations-all-attributes').checked = false;
+        document.getElementById('relations-title').textContent =
+            graph.schemeArtefactId + ' - ' + graph.schemeName + ' (' + graph.nodes.length + ' entities, ' + graph.edges.length + ' relations)';
+
+        const nodes = new vis.DataSet(graph.nodes.map(n => Object.assign(nodeView(n), {
+            shape: n.linking ? 'ellipse' : 'box',
+            margin: 14,
+            color: n.external
+                ? {background: '#f3f4f6', border: '#9ca3af', highlight: {background: '#e5e7eb', border: '#6b7280'}}
+                : n.linking
+                    ? {background: '#13ad8f', border: '#0e7d67', highlight: {background: '#17c4a1', border: '#0e7d67'}}
+                    : {background: '#053771', border: '#032650', highlight: {background: '#06529b', border: '#032650'}},
+            shapeProperties: {borderDashes: n.external ? [5, 5] : false, borderRadius: 6},
+            shadow: {enabled: true, color: 'rgba(0,0,0,0.15)', size: 8, x: 2, y: 3},
+        })));
+        relationsNodes = nodes;
+        // several self references on one entity (e.g. parent undertakings) would otherwise overlap
+        const selfLoops = {};
+        const edges = new vis.DataSet(graph.edges.map((e, i) => ({
+            id: i,
+            from: e.from,
+            to: e.to,
+            label: e.fieldCode,
+            arrows: {to: {enabled: true, scaleFactor: 0.7}},
+            dashes: !e.required,
+            font: {size: 13, color: '#475569', strokeWidth: 4, strokeColor: '#ffffff', align: 'middle'},
+            width: 1.5,
+            color: {color: '#94a3b8', highlight: '#053771', hover: '#053771'},
+            smooth: {type: 'dynamic'},
+            selfReference: e.from === e.to
+                ? (() => { const n = selfLoops[e.from] = (selfLoops[e.from] || 0) + 1;
+                           return {size: 18 + 10 * n, angle: (n - 1) * Math.PI / 2.5, renderBehindTheNode: true}; })()
+                : {size: 25},
+        })));
+
+        if (relationsNetwork) relationsNetwork.destroy();
+        relationsNetwork = new vis.Network(document.getElementById('relations-canvas'), {nodes, edges}, {
+            interaction: {hover: true, tooltipDelay: 300, keyboard: false},
+            physics: {
+                solver: 'forceAtlas2Based',
+                forceAtlas2Based: {gravitationalConstant: -90, springLength: 110, avoidOverlap: 0.9},
+                stabilization: {iterations: 400},
+            },
+        });
+        relationsNetwork.once('stabilizationIterationsDone', () => {
+            relationsNetwork.setOptions({physics: false});
+            resolveOverlaps();
+            relationsNetwork.fit({animation: true});
+        });
+        // a double click also fires two clicks - delay the toggle so a double click only opens the flow
+        let clickTimer = null;
+        relationsNetwork.on('click', params => {
+            if (!params.nodes.length) return;
+            clearTimeout(clickTimer);
+            clickTimer = setTimeout(() => toggleAttributes(params.nodes[0]), 250);
+        });
+        relationsNetwork.on('doubleClick', params => {
+            clearTimeout(clickTimer);
+            if (params.nodes.length) window.open('/microdata/' + params.nodes[0], '_blank');
+        });
+    }
+</script>
+</body>
+</html>

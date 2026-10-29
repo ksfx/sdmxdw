@@ -1,0 +1,44 @@
+<div xmlns:th="http://www.thymeleaf.org">
+    <h2 class="text-lg font-bold" th:text="${flow.agencyId} + ':' + ${flow.artefactId} + ' - ' + ${record.entityId}"></h2>
+    <p class="text-xs opacity-60 mb-2" th:text="${record.reportingPeriod} + ' · Stage: ' + ${record.stage}"></p>
+    <a class="btn btn-xs mb-2" th:href="@{/explore/microdata/{fid}/records/{rid}(fid=${flow.id},rid=${record.id})}">Open full page</a>
+
+    <table class="table table-sm mt-2">
+        <tbody>
+        <tr th:each="row : ${payloadRows}">
+            <td th:text="${row.label}"></td>
+            <td>
+                <a th:if="${row.targetRecordId}" class="link link-primary"
+                   th:href="@{/explore/microdata/{fid}/records/{rid}(fid=${row.targetFlowId},rid=${row.targetRecordId})}"
+                   th:attr="hx-get=@{/explore/microdata/{fid}/records/{rid}/panel(fid=${row.targetFlowId},rid=${row.targetRecordId})}"
+                   hx-target="#detail-panel" hx-swap="innerHTML"
+                   th:text="${row.value}"></a>
+                <span th:unless="${row.targetRecordId}" th:text="${row.value}"></span>
+            </td>
+        </tr>
+        </tbody>
+    </table>
+
+    <div th:each="section : ${groupSections}" class="mt-4">
+        <h3 class="font-semibold text-sm" th:text="${section.groupCode}"></h3>
+        <p class="text-xs opacity-60" th:if="${#lists.isEmpty(section.instances)}">No entries</p>
+        <div th:each="instance, iter : ${section.instances}" class="mb-2">
+            <p class="text-xs opacity-70" th:text="'#' + (${iter.index} + 1)"></p>
+            <table class="table table-xs">
+                <tbody>
+                <tr th:each="row : ${instance}">
+                    <td th:text="${row.label}"></td>
+                    <td>
+                        <a th:if="${row.targetRecordId}" class="link link-primary"
+                           th:href="@{/explore/microdata/{fid}/records/{rid}(fid=${row.targetFlowId},rid=${row.targetRecordId})}"
+                           th:attr="hx-get=@{/explore/microdata/{fid}/records/{rid}/panel(fid=${row.targetFlowId},rid=${row.targetRecordId})}"
+                           hx-target="#detail-panel" hx-swap="innerHTML"
+                           th:text="${row.value}"></a>
+                        <span th:unless="${row.targetRecordId}" th:text="${row.value}"></span>
+                    </td>
+                </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

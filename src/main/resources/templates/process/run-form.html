@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org" data-theme="sdmxdw">
+<head th:replace="~{process/fragments/head :: head('Run ' + ${process.name})}"></head>
+<body class="min-h-screen bg-base-200">
+<div th:replace="~{fragments/nav :: nav}"></div>
+<div class="p-8 space-y-6 max-w-2xl">
+    <div th:replace="~{process/fragments/head :: alerts}"></div>
+    <form class="card bg-base-100 shadow-xl p-6 space-y-3" method="post" th:action="@{/processes/{id}/run(id=${process.id})}">
+        <p class="text-sm"><a class="link" th:href="@{/processes/{id}(id=${process.id})}" th:text="${process.name}"></a></p>
+        <h1 class="text-xl font-bold">Start run</h1>
+        <label th:each="p : ${params}" class="form-control">
+            <span class="label-text text-sm"><span th:text="${p.label} ?: ${p.name}"></span><span th:if="${p.required}" class="text-error"> *</span>
+                <code class="text-xs opacity-60" th:text="${p.name}"></code></span>
+            <input class="input input-bordered input-sm" th:name="'param.' + ${p.name}" th:value="${p.defaultValue}" th:required="${p.required}"/>
+        </label>
+        <p th:if="${#lists.isEmpty(params)}" class="text-sm opacity-70">This process has no parameters.</p>
+        <label class="label cursor-pointer justify-start gap-2 w-fit">
+            <input type="checkbox" class="checkbox checkbox-sm" name="dryRun" value="true"/>
+            <span class="label-text"><b>Dry run</b>: run the scripts and validate their deliveries, but load nothing and skip aggregations and promotions</span>
+        </label>
+        <div class="flex gap-2">
+            <button class="btn btn-primary btn-sm" type="submit">Start</button>
+            <a class="btn btn-sm" th:href="@{/processes/{id}(id=${process.id})}">Cancel</a>
+        </div>
+    </form>
+</div>
+</body>
+</html>

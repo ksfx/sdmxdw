@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org" data-theme="sdmxdw">
+<head>
+    <meta charset="UTF-8"/>
+    <title>New user</title>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.23/dist/full.min.css" rel="stylesheet" type="text/css" />
+    <link rel="stylesheet" href="/css/brand.css" />
+    <link rel="icon" href="/img/favicon.png" />
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="min-h-screen bg-base-200">
+<div th:replace="~{fragments/nav :: nav}"></div>
+<div class="p-8">
+    <div class="card bg-base-100 shadow-xl p-6 max-w-lg">
+        <h1 class="text-xl font-bold mb-4">New user</h1>
+        <form method="post" th:action="@{/users}" class="space-y-2">
+            <input class="input input-bordered w-full" name="firstName" placeholder="First name" required/>
+            <input class="input input-bordered w-full" name="lastName" placeholder="Last name" required/>
+            <input class="input input-bordered w-full" type="email" name="email" placeholder="Email" required/>
+            <input class="input input-bordered w-full" type="password" name="initialPassword" placeholder="Initial password" required/>
+            <select class="select select-bordered w-full" name="role" required>
+                <option th:each="r : ${roles}" th:value="${r}" th:text="${r}"></option>
+            </select>
+            <p class="text-sm opacity-70">The user must change this password on first login.</p>
+            <button class="btn btn-primary" type="submit">Create</button>
+        </form>
+    </div>
+</div>
+</body>
+</html>

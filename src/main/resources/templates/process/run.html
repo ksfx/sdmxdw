@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org" data-theme="sdmxdw">
+<head th:replace="~{process/fragments/head :: head('Run #' + ${run.id})}"></head>
+<body class="min-h-screen bg-base-200">
+<div th:replace="~{fragments/nav :: nav}"></div>
+<div class="p-8 space-y-6">
+    <div th:fragment="live" id="run-live" class="space-y-6"
+         th:attr="hx-get=${active} ? @{/processes/{id}/runs/{rid}/live(id=${process.id},rid=${run.id})} : null,
+                  hx-trigger=${active} ? 'every 2s' : null, hx-swap=${active} ? 'outerHTML' : null">
+        <div class="card bg-base-100 shadow-xl p-6">
+            <div class="flex flex-wrap justify-between gap-4">
+                <div>
+                    <p class="text-sm"><a class="link" th:href="@{/processes/{id}(id=${process.id},tab='runs')}" th:text="${process.name}"></a></p>
+                    <h1 class="text-2xl font-bold">
+                        <span th:text="'Run #' + ${run.id}"></span>
+                        <span th:replace="~{process/fragments/head :: status(${run.status.name()})}"></span>
+                        <span th:if="${run.dryRun}" class="badge badge-outline">dry run</span>
+                    </h1>
+                    <p class="text-sm opacity-70">
+                        <span th:text="${run.trigger} + ' by ' + ${run.triggeredBy}"></span>
+                        <span th:if="${run.startedAt}" th:text="' · started ' + ${#temporals.format(run.startedAt, 'yyyy-MM-dd HH:mm:ss')}"></span>
+                        <span th:if="${run.duration}" th:text="' · ' + ${run.duration.toSeconds()} + ' s'"></span>
+                        <span th:if="${run.commitSha}" class="font-mono" th:text="' · code ' + ${#strings.substring(run.commitSha, 0, 8)}"></span>
+                    </p>
+                    <p class="text-sm font-mono" th:if="${!runParams.isEmpty()}">
+                        <span th:each="e : ${runParams}" class="badge badge-ghost mr-1" th:text="${e.key} + '=' + ${e.value}"></span></p>
+                    <pre th:if="${run.message}" class="text-sm text-error mt-2 whitespace-pre-wrap" th:text="${run.message}"></pre>
+                </div>
+                <div class="flex gap-2 items-start">
+                    <form th:if="${active}" method="post" th:action="@{/processes/{id}/runs/{rid}/cancel(id=${process.id},rid=${run.id})}">
+                        <button class="btn btn-sm btn-error btn-outline" type="submit">Cancel run</button>
+                    </form>
+                    <a th:unless="${active}" class="btn btn-sm" th:href="@{/processes/{id}/run(id=${process.id})}">Run again…</a>
+                </div>
+            </div>
+        </div>
+
+        <div class="card bg-base-100 shadow-xl p-6" th:each="v : ${steps}" th:with="s=${v.step}">
+            <div class="flex flex-wrap items-center gap-2">
+                <span class="font-mono font-bold" th:text="${s.position + 1} + '. ' + ${s.stepKey}"></span>
+                <span class="badge badge-sm badge-ghost" th:text="${s.type}"></span>
+                <span th:replace="~{process/fragments/head :: status(${s.status.name()})}"></span>
+                <span th:if="${s.status.name() == 'RUNNING'}" class="loading loading-dots loading-xs"></span>
+                <span class="text-xs opacity-60" th:if="${s.startedAt != null and s.finishedAt != null}"
+                      th:text="${T(java.time.Duration).between(s.startedAt, s.finishedAt).toMillis() / 1000.0} + ' s'"></span>
+                <span class="text-xs opacity-60" th:if="${s.exitCode != null}" th:text="'exit ' + ${s.exitCode}"></span>
+            </div>
+            <div th:if="${v.report != null and !#lists.isEmpty(v.report.targets)}" class="mt-2 overflow-x-auto">
+                <table class="table table-xs w-fit">
+                    <thead><tr><th>Loaded into</th><th class="text-right">Rows</th><th class="text-right">Written</th><th class="text-right">Unchanged</th><th></th></tr></thead>
+                    <tbody>
+                    <tr th:each="t : ${v.report.targets}">
+                        <td class="font-mono" th:text="${t.flowRef}"></td>
+                        <td class="text-right" th:text="${t.rows}"></td>
+                        <td class="text-right" th:text="${v.report.dryRun} ? '(' + ${t.written} + ')' : ${t.written}"></td>
+                        <td class="text-right" th:text="${t.unchanged}"></td>
+                        <td><a th:unless="${v.report.dryRun}" class="link link-primary text-xs"
+                               th:href="${t.kind == 'dataflow'} ? @{/explore/dataflows/{id}(id=${t.id},view='pending')} : @{/explore/microdata/{id}(id=${t.id},view='pending')}">pending changes</a>
+                            <span th:if="${v.report.dryRun}" class="text-xs opacity-60">dry run - nothing loaded</span></td>
+                    </tr>
+                    </tbody>
+                </table>
+            </div>
+            <details class="mt-2" th:open="${s.status.name() == 'RUNNING' or s.status.name() == 'FAILURE' or #lists.size(steps) == 1}">
+                <summary class="cursor-pointer text-sm opacity-70">Log</summary>
+                <pre class="bg-neutral text-neutral-content text-xs p-3 rounded-box mt-1 overflow-auto max-h-[32rem] whitespace-pre-wrap"
+                     th:text="${#strings.isEmpty(s.log)} ? '(no output)' : ${s.log}"></pre>
+            </details>
+        </div>
+
+        <div class="card bg-base-100 shadow-xl p-6" th:if="${!#lists.isEmpty(subRuns)}">
+            <h2 class="font-bold mb-2">Sub-process runs</h2>
+            <ul class="text-sm">
+                <li th:each="r : ${subRuns}"><a class="link" th:href="@{/processes/{id}/runs/{rid}(id=${r.processId},rid=${r.id})}" th:text="'#' + ${r.id}"></a>
+                    <span th:replace="~{process/fragments/head :: status(${r.status.name()})}"></span></li>
+            </ul>
+        </div>
+    </div>
+</div>
+</body>
+</html>

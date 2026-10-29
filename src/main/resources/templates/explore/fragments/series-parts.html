@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<body>
+
+<div th:fragment="meta" class="text-xs text-gray-500 mt-2 space-y-1">
+    <p>
+        <span th:each="d, it : ${keyDimensions}">
+            <a class="hover:underline" th:if="${d.conceptSchemeId}"
+               th:href="@{/structures/concept-schemes/{id}(id=${d.conceptSchemeId})}"
+               th:title="${d.conceptName}" th:text="${d.conceptCode}"></a><span th:unless="${d.conceptSchemeId}" th:text="${d.conceptCode}"></span>
+            <span th:text="'(' + ${d.conceptName} + ')'"></span> =
+            <a class="hover:underline font-mono" th:if="${d.codelistId}"
+               th:href="@{/structures/codelists/{id}(id=${d.codelistId})}"
+               th:title="${d.codelistArtefactId}" th:text="${d.value}"></a><span class="font-mono" th:unless="${d.codelistId}" th:text="${d.value}"></span>
+            <span th:if="${d.valueName}" th:text="${d.valueName}"></span>
+            <span th:unless="${it.last}"> · </span>
+        </span>
+    </p>
+    <p>
+        Dataflow
+        <a class="hover:underline" th:href="@{/structures/dataflows/{id}(id=${dataflow.id})}"
+           th:text="${dataflow.agencyId} + ':' + ${dataflow.artefactId} + '(' + ${dataflow.version} + ')'"></a>
+        · DSD
+        <a class="hover:underline" th:href="@{/structures/dsds/{id}(id=${dsd.id})}"
+           th:text="${dsd.agencyId} + ':' + ${dsd.artefactId} + '(' + ${dsd.version} + ')'"></a>
+    </p>
+</div>
+
+<div th:fragment="exportMenu" class="dropdown" th:if="${stage != 'ALPHA'}">
+    <div tabindex="0" role="button" class="btn btn-sm">Export ▾</div>
+    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-10 w-48 p-2 shadow">
+        <li><a th:href="@{/explore/dataflows/{id}/series/{sid}/export.csv(id=${dataflow.id},sid=${seriesId},asOf=${asOf})}">CSV</a></li>
+        <li><a th:href="@{/explore/dataflows/{id}/series/{sid}/export.xlsx(id=${dataflow.id},sid=${seriesId},asOf=${asOf})}">Excel</a></li>
+        <li><a th:href="@{/explore/dataflows/{id}/series/{sid}/export-sdmx21.xml(id=${dataflow.id},sid=${seriesId},asOf=${asOf})}">SDMX-ML 2.1</a></li>
+        <li><a th:href="@{/explore/dataflows/{id}/series/{sid}/export-sdmx31.xml(id=${dataflow.id},sid=${seriesId},asOf=${asOf})}">SDMX-ML 3.1</a></li>
+    </ul>
+</div>
+
+<div th:fragment="stageSwitch" th:if="${isDatenmanager}" class="space-y-2">
+    <div class="join" title="Datenmanager only: switch between published and unpublished data">
+        <a class="join-item btn btn-sm" th:classappend="${stage == 'BETA'} ? 'btn-primary pointer-events-none'"
+           th:href="@{/explore/dataflows/{id}/series/{sid}(id=${dataflow.id},sid=${seriesId},asOf=${asOf})}"
+           th:attr="hx-get=${panelMode} ? @{/explore/dataflows/{id}/series/{sid}/panel(id=${dataflow.id},sid=${seriesId},asOf=${asOf})} : null,
+                    hx-target=${panelMode} ? '#detail-panel' : null">Published (Beta)</a>
+        <a class="join-item btn btn-sm" th:classappend="${stage == 'ALPHA'} ? 'btn-warning pointer-events-none'"
+           th:href="@{/explore/dataflows/{id}/series/{sid}(id=${dataflow.id},sid=${seriesId},asOf=${asOf},stage='ALPHA')}"
+           th:attr="hx-get=${panelMode} ? @{/explore/dataflows/{id}/series/{sid}/panel(id=${dataflow.id},sid=${seriesId},asOf=${asOf},stage='ALPHA')} : null,
+                    hx-target=${panelMode} ? '#detail-panel' : null">Unpublished (Alpha)</a>
+    </div>
+    <div th:if="${stage == 'ALPHA'}" class="alert alert-warning py-2 text-sm">
+        <span>Unpublished (Alpha) values<span th:if="${pendingCount > 0}" th:text="' - ' + ${pendingCount} + ' period(s) differ from the published series'"></span>.
+            Corrections are saved in Alpha and published with the next promotion
+            (<a class="link" th:href="@{/explore/dataflows/{id}(id=${dataflow.id},view='pending')}">pending changes</a>).</span>
+    </div>
+</div>
+
+<form th:fragment="asOfForm" method="get" class="flex flex-wrap items-end gap-2"
+      th:action="@{/explore/dataflows/{id}/series/{sid}(id=${dataflow.id},sid=${seriesId})}"
+      th:attr="hx-get=${panelMode} ? @{/explore/dataflows/{id}/series/{sid}/panel(id=${dataflow.id},sid=${seriesId})} : null,
+               hx-target=${panelMode} ? '#detail-panel' : null">
+    <div class="form-control">
+        <label class="label text-xs py-0" title="Show the series as it was published at the end of that day (UTC)">Published as of</label>
+        <input type="date" name="asOf" class="input input-bordered input-sm" th:value="${asOf}"/>
+        <input type="hidden" name="stage" th:if="${stage == 'ALPHA'}" value="ALPHA"/>
+    </div>
+    <button class="btn btn-sm" type="submit">Compare</button>
+    <a th:if="${asOf}" class="btn btn-sm btn-ghost"
+       th:href="@{/explore/dataflows/{id}/series/{sid}(id=${dataflow.id},sid=${seriesId})}"
+       th:attr="hx-get=${panelMode} ? @{/explore/dataflows/{id}/series/{sid}/panel(id=${dataflow.id},sid=${seriesId})} : null,
+                hx-target=${panelMode} ? '#detail-panel' : null">Clear</a>
+    <span class="text-xs text-gray-500 self-center" th:if="${revisedCount > 0}"
+          th:text="${revisedCount} + ' period(s) revised since first publication'"></span>
+</form>
+
+<table th:fragment="valueTable" class="table table-zebra max-w-5xl">
+    <thead>
+    <tr>
+        <th>Time period</th>
+        <th th:each="m : ${measureColumns}" class="text-right" th:title="${m.tooltip}" th:text="${m.header}"></th>
+        <th th:if="${asOf}" th:each="m : ${measureColumns}" class="text-right" th:title="${m.tooltip} + ' as published at ' + ${asOfInstant}"
+            th:text="${m.header} + ' as of ' + ${asOf}"></th>
+        <th>Revisions</th>
+        <th th:if="${stage == 'ALPHA'}">Published</th>
+        <th th:if="${canEdit}"></th>
+    </tr>
+    </thead>
+    <tbody>
+    <th:block th:each="row : ${tableRows}">
+    <tr th:if="${editPeriod != null and editPeriod == row.timePeriod}" class="bg-warning/10">
+        <td colspan="99">
+            <form class="flex flex-wrap items-end gap-3" method="post"
+                  th:action="@{/explore/dataflows/{id}/series/{sid}/correct(id=${dataflow.id},sid=${seriesId})}"
+                  th:attr="hx-post=@{/explore/dataflows/{id}/series/{sid}/correct(id=${dataflow.id},sid=${seriesId})}"
+                  hx-target="closest table" hx-swap="outerHTML">
+                <div class="font-semibold" th:text="${row.timePeriod}"></div>
+                <input type="hidden" name="timePeriod" th:value="${row.timePeriod}"/>
+                <input type="hidden" name="asOf" th:value="${asOf}"/>
+                <input type="hidden" name="panelMode" th:value="${panelMode}"/>
+                <div th:each="m, it : ${measureColumns}" class="form-control">
+                    <label class="label text-xs py-0" th:title="${m.tooltip}" th:text="${m.header}"></label>
+                    <input class="input input-bordered input-sm w-36 text-right" required autofocus
+                           th:name="'measure_' + ${measureIds[it.index]}" th:value="${editValues[it.index]}"/>
+                </div>
+                <div class="form-control">
+                    <label class="label text-xs py-0">Reason (optional)</label>
+                    <input class="input input-bordered input-sm w-64" name="comment" placeholder="e.g. revised by reporting bank"/>
+                </div>
+                <button class="btn btn-primary btn-sm" type="submit">Save in Alpha</button>
+                <button class="btn btn-sm" type="button"
+                        th:attr="hx-get=@{/explore/dataflows/{id}/series/{sid}/value-table(id=${dataflow.id},sid=${seriesId},stage='ALPHA',asOf=${asOf},panelMode=${panelMode})}"
+                        hx-target="closest table" hx-swap="outerHTML">Cancel</button>
+            </form>
+        </td>
+    </tr>
+    <tr th:unless="${editPeriod != null and editPeriod == row.timePeriod}"
+        th:classappend="${savedPeriod == row.timePeriod} ? 'bg-success/10'">
+        <td th:text="${row.timePeriod}"></td>
+        <td th:each="v, it : ${row.values}" class="text-right tabular-nums"
+            th:title="${measureColumns[it.index].tooltip}" th:text="${v}"></td>
+        <td th:if="${asOf}" th:each="v, it : ${row.asOfValues}" class="text-right tabular-nums"
+            th:classappend="${v != row.values[it.index]} ? 'text-warning font-semibold'"
+            th:title="${v != row.values[it.index]} ? 'differs from the current value' : 'unchanged'"
+            th:text="${#strings.isEmpty(v)} ? '-' : ${v}"></td>
+        <td>
+            <details th:if="${row.revised}" class="text-xs">
+                <summary class="badge badge-warning badge-sm cursor-pointer" th:text="'revised ' + (${#lists.size(row.revisions)} - 1) + 'x'"></summary>
+                <table class="table table-xs mt-1 whitespace-nowrap">
+                    <thead><tr><th>Value</th><th>Published from</th><th>until</th><th>Reason</th></tr></thead>
+                    <tbody>
+                    <tr th:each="r : ${row.revisions}">
+                        <td class="tabular-nums" th:text="${r.values}"></td>
+                        <td th:text="${#strings.substring(r.validFrom, 0, 16)}"></td>
+                        <td th:text="${r.validTo} == null ? 'current' : ${#strings.substring(r.validTo, 0, 16)}"></td>
+                        <td class="whitespace-normal min-w-56" th:text="${r.comment} ?: ''"></td>
+                    </tr>
+                    </tbody>
+                </table>
+            </details>
+        </td>
+        <td th:if="${stage == 'ALPHA'}" class="text-xs whitespace-nowrap">
+            <span th:if="${row.pending == null}" class="opacity-50" title="same value as published">=</span>
+            <span th:if="${row.pending == 'new'}" class="badge badge-sm badge-info" title="not yet published">new</span>
+            <span th:if="${row.pending != null and row.pending != 'new'}" class="badge badge-sm badge-warning"
+                  th:title="'published value, replaced on promotion'" th:text="'pending, now ' + ${row.pending}"></span>
+        </td>
+        <td th:if="${canEdit}" class="whitespace-nowrap">
+            <a class="link link-primary text-sm" href="#"
+               th:attr="hx-get=@{/explore/dataflows/{id}/series/{sid}/edit-value(id=${dataflow.id},sid=${seriesId},timePeriod=${row.timePeriod},asOf=${asOf},panelMode=${panelMode})}"
+               hx-target="closest table" hx-swap="outerHTML">Edit</a>
+            <span th:if="${savedPeriod == row.timePeriod}" class="text-xs text-success ml-1">saved</span>
+        </td>
+    </tr>
+    </th:block>
+    </tbody>
+</table>
+
+</body>
+</html>

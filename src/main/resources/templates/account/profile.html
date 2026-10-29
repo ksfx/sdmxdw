@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org" data-theme="sdmxdw">
+<head>
+    <meta charset="UTF-8"/>
+    <title>Profile</title>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.23/dist/full.min.css" rel="stylesheet" type="text/css" />
+    <link rel="stylesheet" href="/css/brand.css" />
+    <link rel="icon" href="/img/favicon.png" />
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="min-h-screen bg-base-200">
+<div th:replace="~{fragments/nav :: nav}"></div>
+<div class="p-8 space-y-6 max-w-4xl">
+    <div class="card bg-base-100 shadow-xl p-6">
+        <div class="flex items-center gap-4">
+            <div class="avatar placeholder">
+                <div class="bg-primary text-primary-content rounded-full w-16">
+                    <span class="text-xl" th:text="${#strings.toUpperCase(#strings.substring(user.firstName,0,1) + #strings.substring(user.lastName,0,1))}"></span>
+                </div>
+            </div>
+            <div>
+                <h1 class="text-xl font-bold" th:text="${user.firstName} + ' ' + ${user.lastName}"></h1>
+                <p class="text-sm opacity-70" th:text="${user.email}"></p>
+                <span class="badge badge-outline mt-1" th:text="${user.role}"></span>
+            </div>
+        </div>
+    </div>
+
+    <div class="card bg-base-100 shadow-xl p-6">
+        <h2 class="font-bold mb-4">Name</h2>
+        <div class="alert alert-success mb-2" th:if="${nameSuccess}"><span th:text="${nameSuccess}"></span></div>
+        <div class="alert alert-error mb-2" th:if="${nameError}"><span th:text="${nameError}"></span></div>
+        <form method="post" th:action="@{/account/profile/name}" class="space-y-2">
+            <input class="input input-bordered w-full" name="firstName" th:value="${user.firstName}" placeholder="First name" required/>
+            <input class="input input-bordered w-full" name="lastName" th:value="${user.lastName}" placeholder="Last name" required/>
+            <button class="btn btn-primary" type="submit">Save name</button>
+        </form>
+    </div>
+
+    <div class="card bg-base-100 shadow-xl p-6">
+        <h2 class="font-bold mb-4">Change password</h2>
+        <div class="alert alert-success mb-2" th:if="${passwordSuccess}"><span th:text="${passwordSuccess}"></span></div>
+        <div class="alert alert-error mb-2" th:if="${passwordError}"><span th:text="${passwordError}"></span></div>
+        <form method="post" th:action="@{/account/profile/password}" class="space-y-2">
+            <input class="input input-bordered w-full" type="password" name="currentPassword" placeholder="Current password" required/>
+            <input class="input input-bordered w-full" type="password" name="newPassword" placeholder="New password" required/>
+            <input class="input input-bordered w-full" type="password" name="confirmPassword" placeholder="Confirm new password" required/>
+            <button class="btn btn-primary" type="submit">Change password</button>
+        </form>
+    </div>
+
+    <div class="card bg-base-100 shadow-xl p-6" id="api-tokens">
+        <h2 class="font-bold mb-1">API tokens</h2>
+        <p class="text-sm opacity-70 mb-4">Personal tokens for scripts (Python, R) that read data via the <code>/rest</code> API.
+            A token has the same rights as your account. Send it as <code>Authorization: Bearer &lt;token&gt;</code>
+            (or as basic-auth password). See the <a class="link" href="/api-docs">API documentation</a>.</p>
+        <div class="alert alert-success mb-4 flex-col items-start" th:if="${newToken}">
+            <span>Token "<b th:text="${newTokenName}"></b>" created. Copy it now - it will not be shown again:</span>
+            <div class="flex gap-2 w-full">
+                <input id="new-token" class="input input-bordered input-sm font-mono flex-1" readonly th:value="${newToken}"/>
+                <button type="button" class="btn btn-sm" onclick="navigator.clipboard.writeText(document.getElementById('new-token').value); this.textContent='Copied'">Copy</button>
+            </div>
+        </div>
+        <div class="alert alert-error mb-2" th:if="${tokenError}"><span th:text="${tokenError}"></span></div>
+        <table class="table table-sm mb-4" th:if="${not #lists.isEmpty(apiTokens)}">
+            <thead><tr><th>Name</th><th>Token</th><th>Created</th><th>Expires</th><th>Last used</th><th>Status</th><th></th></tr></thead>
+            <tbody>
+            <tr th:each="t : ${apiTokens}" th:classappend="${t.isActive(now)} ? '' : 'opacity-50'">
+                <td th:text="${t.name}"></td>
+                <td class="font-mono" th:text="${t.tokenHint}"></td>
+                <td th:text="${#temporals.format(t.createdAt, 'yyyy-MM-dd')}"></td>
+                <td th:text="${t.expiresAt} ? ${#temporals.format(t.expiresAt, 'yyyy-MM-dd')} : 'never'"></td>
+                <td th:text="${t.lastUsedAt} ? ${#temporals.format(t.lastUsedAt, 'yyyy-MM-dd HH:mm')} : '-'"></td>
+                <td th:text="${t.revokedAt != null} ? 'revoked' : (${t.isActive(now)} ? 'active' : 'expired')"></td>
+                <td>
+                    <form method="post" th:if="${t.revokedAt == null}" th:action="@{/account/profile/tokens/{id}/revoke(id=${t.id})}"
+                          onsubmit="return confirm('Revoke this token? Scripts using it will stop working.')">
+                        <button class="btn btn-xs btn-error btn-outline" type="submit">Revoke</button>
+                    </form>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+        <form method="post" th:action="@{/account/profile/tokens}" class="flex flex-wrap gap-2 items-end">
+            <div class="form-control">
+                <label class="label text-xs font-semibold py-1">Name</label>
+                <input class="input input-bordered input-sm w-64" name="name" placeholder="e.g. Jupyter laptop" required maxlength="100"/>
+            </div>
+            <div class="form-control">
+                <label class="label text-xs font-semibold py-1">Valid for</label>
+                <select class="select select-bordered select-sm" name="validDays">
+                    <option value="30">30 days</option>
+                    <option value="90" selected>90 days</option>
+                    <option value="365">1 year</option>
+                    <option value="0">No expiry</option>
+                </select>
+            </div>
+            <button class="btn btn-primary btn-sm" type="submit">Create token</button>
+        </form>
+    </div>
+</div>
+</body>
+</html>

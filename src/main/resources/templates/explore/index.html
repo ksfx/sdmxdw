@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org" data-theme="sdmxdw">
+<head>
+    <meta charset="UTF-8"/>
+    <title>Explore time series</title>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.23/dist/full.min.css" rel="stylesheet" type="text/css" />
+    <link rel="stylesheet" href="/css/brand.css" />
+    <link rel="icon" href="/img/favicon.png" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/htmx.org@2.0.3"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="/js/dimension-filter.js"></script>
+</head>
+<body class="min-h-screen bg-base-200">
+<div th:replace="~{fragments/nav :: nav}"></div>
+<div class="p-8 space-y-6">
+    <div class="card bg-base-100 shadow-xl p-6 max-w-lg">
+        <form method="get" th:action="@{/explore}" class="flex gap-2">
+            <input class="input input-bordered flex-1" type="text" name="q" placeholder="Search dataflow..."/>
+            <button class="btn btn-primary" type="submit">Search</button>
+        </form>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div class="card bg-base-100 shadow-xl p-6 overflow-auto" style="max-height: 75vh;">
+            <div th:each="tree : ${trees}" class="mb-6">
+                <div class="flex items-center justify-between gap-2 mb-4">
+                    <h1 class="text-xl font-bold" th:text="${tree.artefactId} + ' - ' + ${tree.name}"></h1>
+                    <button type="button" class="btn btn-sm btn-ghost border-base-300" th:if="${tree.hasDescription}"
+                            th:attr="hx-get=@{/explore/category-schemes/{id}/about(id=${tree.id})}"
+                            hx-target="#detail-panel" hx-swap="innerHTML">About</button>
+                </div>
+                <div th:replace="~{::nodeList(${tree.roots})}"></div>
+            </div>
+        </div>
+
+        <div class="card bg-base-100 shadow-xl p-6 overflow-auto" style="max-height: 75vh;" id="detail-panel">
+            <p class="opacity-60">Expand a category and a dataflow on the left and select a series to see it as a chart here.</p>
+        </div>
+    </div>
+
+    <ul th:fragment="nodeList(nodes)" class="pl-4">
+        <li th:each="node : ${nodes}">
+            <details th:attr="hx-get=${node.dataflowCount > 0} ? @{/explore/categories/{id}/dataflows-fragment(id=${node.id})} : null,hx-trigger=${node.dataflowCount > 0} ? 'toggle once' : null,hx-target=${node.dataflowCount > 0} ? 'find .dataflow-slot' : null,hx-swap='innerHTML'">
+                <summary class="cursor-pointer">
+                    <span th:text="${node.code} + ' - ' + ${node.name}"></span>
+                    <span class="text-xs opacity-60 ml-2" th:if="${node.dataflowCount > 0}" th:text="'(' + ${node.dataflowCount} + ' Dataflow(s))'"></span>
+                </summary>
+                <div class="dataflow-slot pl-4 mt-1" th:if="${node.dataflowCount > 0}">
+                    <span class="loading loading-spinner loading-xs"></span>
+                </div>
+                <div th:if="${not #lists.isEmpty(node.children)}" th:replace="~{::nodeList(${node.children})}"></div>
+            </details>
+        </li>
+    </ul>
+</div>
+</body>
+</html>

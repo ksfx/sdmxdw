@@ -1,0 +1,15 @@
+<div xmlns:th="http://www.thymeleaf.org" class="space-y-1">
+    <p th:if="${#lists.isEmpty(flows)}" class="text-xs opacity-60">No microdata flows</p>
+    <details th:each="flow : ${flows}"
+              th:attr="hx-get=@{/explore/microdata/{id}/records-fragment(id=${flow.id},reportingPeriod=${reportingPeriod})},hx-trigger='toggle once',hx-target='find .records-slot',hx-swap='innerHTML'">
+        <summary class="cursor-pointer text-sm">
+            <span class="font-mono" th:text="${flow.agencyId} + ':' + ${flow.artefactId}"></span>
+            <span class="opacity-70" th:text="'- ' + ${flow.name}"></span>
+            <a class="link link-primary text-xs ml-2" title="Open the flow page: all records, filters, export"
+               th:href="@{/explore/microdata/{id}(id=${flow.id},reportingPeriod=${reportingPeriod})}" onclick="event.stopPropagation()">open ›</a>
+        </summary>
+        <div class="records-slot pl-4 mt-1">
+            <span class="loading loading-spinner loading-xs"></span>
+        </div>
+    </details>
+</div>

@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org" data-theme="sdmxdw">
+<head>
+    <meta charset="UTF-8"/>
+    <title th:text="${dataflow.artefactId}">Dataflow</title>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.23/dist/full.min.css" rel="stylesheet" type="text/css" />
+    <link rel="stylesheet" href="/css/brand.css" />
+    <link rel="icon" href="/img/favicon.png" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/htmx.org@2.0.3"></script>
+    <script src="/js/dimension-filter.js"></script>
+</head>
+<body class="min-h-screen bg-base-200">
+<div th:replace="~{fragments/nav :: nav}"></div>
+<div class="p-8 space-y-6" th:with="alpha=${stage == 'ALPHA'}">
+
+    <!-- header: dataflow, stage switch and promotion (Datenmanager) -->
+    <div class="card bg-base-100 shadow-xl p-6">
+        <div class="flex flex-wrap justify-between gap-4">
+            <div>
+                <h1 class="text-xl font-bold" th:text="${dataflow.agencyId} + ':' + ${dataflow.artefactId} + '(' + ${dataflow.version} + ')'"></h1>
+                <p class="text-lg" th:text="${dataflow.name}"></p>
+                <p class="text-sm opacity-70 mt-1">Series key: <span class="font-mono" th:text="${keyDimensionOrder}"></span></p>
+            </div>
+            <div th:if="${isDatenmanager}" class="flex flex-col items-end gap-2">
+                <div class="join" title="Datenmanager only: switch between published and unpublished data">
+                    <a th:if="${alpha}" class="join-item btn btn-sm" th:href="${stageToggleUrl}">Published (Beta)</a>
+                    <span th:unless="${alpha}" class="join-item btn btn-sm btn-primary pointer-events-none">Published (Beta)</span>
+                    <span th:if="${alpha}" class="join-item btn btn-sm btn-warning pointer-events-none">Unpublished (Alpha)</span>
+                    <a th:unless="${alpha}" class="join-item btn btn-sm" th:href="${stageToggleUrl}">Unpublished (Alpha)</a>
+                </div>
+                <form method="post" th:action="@{/explore/dataflows/{id}/promote(id=${dataflow.id})}"
+                      th:attr="onsubmit='return confirm(\'Publish ' + ${pendingCount} + ' pending change(s) to Beta? Economists will see them immediately.\')'">
+                    <button class="btn btn-sm btn-primary" type="submit" th:disabled="${pendingCount == 0}"
+                            th:text="${pendingCount == 0} ? 'Nothing to promote' : 'Promote ' + ${pendingCount} + ' change(s) to Beta'"></button>
+                </form>
+            </div>
+        </div>
+        <div th:if="${flash}" class="alert alert-success mt-4 py-2"><span th:text="${flash}"></span></div>
+        <div th:if="${alpha and view != 'pending' and view != 'activity'}" class="alert alert-warning mt-4 py-2">
+            <span>You are looking at <b>unpublished (Alpha)</b> data. Economists see the published (Beta) values;
+                changes become visible to them only after promotion.</span>
+        </div>
+    </div>
+
+    <!-- tabs -->
+    <div role="tablist" class="tabs tabs-boxed bg-base-100 shadow w-fit">
+        <a role="tab" class="tab" th:classappend="${view == 'series'} ? 'tab-active'" th:href="${tabUrls['series']}">Series</a>
+        <a role="tab" class="tab" th:classappend="${view == 'observations'} ? 'tab-active'" th:href="${tabUrls['observations']}">Observations</a>
+        <a th:if="${isDatenmanager}" role="tab" class="tab gap-2" th:classappend="${view == 'pending'} ? 'tab-active'" th:href="${tabUrls['pending']}">
+            Pending changes <span class="badge badge-sm" th:classappend="${pendingCount > 0} ? 'badge-warning'" th:text="${pendingCount}"></span></a>
+        <a th:if="${isDatenmanager}" role="tab" class="tab" th:classappend="${view == 'activity'} ? 'tab-active'" th:href="${tabUrls['activity']}">Activity</a>
+    </div>
+
+    <!-- filters (all views except activity) -->
+    <div class="card bg-base-100 shadow-xl p-6" th:if="${view != 'activity'}">
+        <form method="get" th:action="@{/explore/dataflows/{id}(id=${dataflow.id})}" class="space-y-3">
+            <input type="hidden" name="view" th:value="${view}"/>
+            <input type="hidden" name="stage" th:value="${stage}"/>
+            <div class="dim-filter" data-autoinit data-mode="submit"
+                 th:attr="data-facets-url=${facetsUrl},data-query=${facetsQuery}">
+                <!-- without JavaScript: the selected codes still travel with the form -->
+                <th:block th:each="f : ${filters}"><input th:each="c : ${f.selected}" type="hidden" th:name="${f.param}" th:value="${c}"/></th:block>
+                <span class="loading loading-spinner loading-sm"></span>
+            </div>
+            <div class="flex flex-wrap gap-3 items-end">
+                <div class="form-control">
+                    <label class="label text-xs font-semibold py-1">Series key contains</label>
+                    <input class="input input-bordered input-sm w-64" type="search" name="q" th:value="${query}" placeholder="e.g. DEMO01"/>
+                </div>
+                <th:block th:if="${view == 'observations'}">
+                    <div class="form-control">
+                        <label class="label text-xs font-semibold py-1">Time period from</label>
+                        <input class="input input-bordered input-sm w-32" name="from" th:value="${from}" placeholder="e.g. 2025-Q1"/>
+                    </div>
+                    <div class="form-control">
+                        <label class="label text-xs font-semibold py-1">to</label>
+                        <input class="input input-bordered input-sm w-32" name="to" th:value="${to}" placeholder="e.g. 2026-Q2"/>
+                    </div>
+                </th:block>
+                <button class="btn btn-primary btn-sm" type="submit">Filter</button>
+                <a class="btn btn-sm" th:href="@{/explore/dataflows/{id}(id=${dataflow.id},view=${view},stage=${stage})}">Reset</a>
+            </div>
+            <p class="text-xs opacity-60">Type to search codes by code or name; counts show the matching series given the other selections. No selection = all codes.</p>
+        </form>
+    </div>
+
+    <!-- series -->
+    <div class="card bg-base-100 shadow-xl p-6" th:if="${view == 'series'}">
+        <p class="text-sm opacity-70 mb-2" th:text="${#numbers.formatInteger(result.total, 1, 'COMMA')} + ' series' + (${result.totalPages} > 1 ? ', page ' + (${result.page} + 1) + ' of ' + ${result.totalPages} : '')"></p>
+        <div class="overflow-x-auto">
+            <table class="table table-sm table-zebra">
+                <thead><tr><th>Series</th><th>From</th><th>To</th><th>Count</th><th>Latest value</th></tr></thead>
+                <tbody>
+                <tr th:each="row : ${rows}">
+                    <td><a class="link link-primary font-mono text-xs" th:title="${row.keyLabel}" th:text="${row.seriesKey}"
+                           th:href="@{/explore/dataflows/{id}/series/{sid}(id=${dataflow.id},sid=${row.seriesId},stage=${alpha} ? 'ALPHA' : null)}"></a></td>
+                    <td th:text="${row.firstPeriod}"></td>
+                    <td th:text="${row.lastPeriod}"></td>
+                    <td th:text="${row.count}"></td>
+                    <td th:text="${row.latestValue}"></td>
+                </tr>
+                </tbody>
+            </table>
+        </div>
+        <p th:if="${#lists.isEmpty(rows)}" class="opacity-60 mt-2">No series match the filter.</p>
+        <div th:replace="~{explore/fragments/pager :: pager(${result.page}, ${result.totalPages})}"></div>
+    </div>
+
+    <!-- observations -->
+    <div class="card bg-base-100 shadow-xl p-6" th:if="${view == 'observations'}">
+        <details th:if="${isDatenmanager and alpha}" class="mb-4 border border-base-300 rounded-box p-3">
+            <summary class="cursor-pointer font-semibold">Record observation (Alpha)</summary>
+            <form method="post" th:action="@{/explore/dataflows/{id}/observations(id=${dataflow.id})}" class="flex flex-wrap gap-3 items-end mt-3">
+                <div th:each="field : ${keyDimensionFields}" class="form-control">
+                    <label class="label text-xs font-semibold py-1" th:text="${field.label}"></label>
+                    <select class="select select-bordered select-sm w-56" th:if="${field.coded}" th:name="'dim_' + ${field.id}" required>
+                        <option th:each="opt : ${field.options}" th:value="${opt.code}" th:text="${opt.label}"></option>
+                    </select>
+                    <input class="input input-bordered input-sm w-40" th:unless="${field.coded}" th:type="${field.inputType}" th:name="'dim_' + ${field.id}" required/>
+                </div>
+                <div th:each="field : ${timeDimensionFields}" class="form-control">
+                    <label class="label text-xs font-semibold py-1" th:text="${field.label} + ' (time period)'"></label>
+                    <input class="input input-bordered input-sm w-32" type="text" th:name="'dim_' + ${field.id}" placeholder="e.g. 2026-Q3" required/>
+                </div>
+                <div th:each="field : ${measureFields}" class="form-control">
+                    <label class="label text-xs font-semibold py-1" th:text="${field.label}"></label>
+                    <input class="input input-bordered input-sm w-36" th:type="${field.inputType}" step="any" th:name="'measure_' + ${field.id}" required/>
+                </div>
+                <button class="btn btn-primary btn-sm" type="submit">Save in Alpha</button>
+            </form>
+        </details>
+        <p class="text-sm opacity-70 mb-2" th:text="${#numbers.formatInteger(result.total, 1, 'COMMA')} + ' observations' + (${result.totalPages} > 1 ? ', page ' + (${result.page} + 1) + ' of ' + ${result.totalPages} : '')"></p>
+        <div class="overflow-x-auto">
+            <table class="table table-sm table-zebra">
+                <thead>
+                <tr>
+                    <th th:each="f : ${filters}" th:title="${f.label}" th:text="${f.code}"></th>
+                    <th>Time period</th>
+                    <th th:each="m : ${measureColumns}" class="text-right" th:title="${m.label}" th:text="${m.code}"></th>
+                    <th>Since</th>
+                    <th></th>
+                </tr>
+                </thead>
+                <tbody>
+                <th:block th:each="row : ${rows}">
+                    <tr th:replace="~{explore/fragments/observation-row :: row}"></tr>
+                </th:block>
+                </tbody>
+            </table>
+        </div>
+        <p th:if="${#lists.isEmpty(rows)}" class="opacity-60 mt-2">No observations match the filter.</p>
+        <p th:if="${isDatenmanager and !alpha and !#lists.isEmpty(rows)}" class="text-xs opacity-60 mt-2">
+            Published values cannot be edited. Switch to <a class="link" th:href="${stageToggleUrl}">Unpublished (Alpha)</a> to correct values.</p>
+        <div th:replace="~{explore/fragments/pager :: pager(${result.page}, ${result.totalPages})}"></div>
+    </div>
+
+    <!-- pending changes: Alpha vs Beta -->
+    <div class="card bg-base-100 shadow-xl p-6" th:if="${view == 'pending'}">
+        <p class="text-sm opacity-70 mb-2">
+            <span th:text="${#numbers.formatInteger(result.total, 1, 'COMMA')} + ' observation(s) would be published by the next promotion'"></span>
+            <span th:if="${result.total != pendingCount}" th:text="'(' + ${pendingCount} + ' in total, filter active)'"></span>
+        </p>
+        <div class="overflow-x-auto">
+            <table class="table table-sm table-zebra">
+                <thead>
+                <tr>
+                    <th>Series</th><th>Time period</th>
+                    <th th:each="m : ${measureColumns}" th:title="${m.label}" th:text="${m.code} + ': published → new'"></th>
+                    <th>Changed</th><th>Reason</th>
+                </tr>
+                </thead>
+                <tbody>
+                <tr th:each="row : ${rows}">
+                    <td><a class="link link-primary font-mono text-xs" th:text="${row.seriesKey}"
+                           th:title="${#strings.listJoin(row.key.![code + ' ' + name], ' · ')}"
+                           th:href="@{/explore/dataflows/{id}/series/{sid}(id=${dataflow.id},sid=${row.seriesId},stage='ALPHA')}"></a></td>
+                    <td th:text="${row.timePeriod}"></td>
+                    <td th:each="v, it : ${row.alphaValues}" class="tabular-nums whitespace-nowrap">
+                        <span th:if="${row.betaValues == null}" class="badge badge-sm badge-info mr-1">new</span>
+                        <span th:if="${row.betaValues != null}" class="opacity-60 line-through" th:text="${row.betaValues[it.index]}"></span>
+                        <span th:if="${row.betaValues != null}"> → </span>
+                        <b th:text="${v}"></b>
+                    </td>
+                    <td class="text-xs opacity-70 whitespace-nowrap" th:text="${#strings.substring(row.validFrom, 0, 16)} + ' · ' + ${row.recordedBy}"></td>
+                    <td class="text-xs" th:text="${row.comment} ?: ''"></td>
+                </tr>
+                </tbody>
+            </table>
+        </div>
+        <p th:if="${#lists.isEmpty(rows)}" class="opacity-60 mt-2">No pending changes - Alpha and Beta are identical.</p>
+        <div th:replace="~{explore/fragments/pager :: pager(${result.page}, ${result.totalPages})}"></div>
+    </div>
+
+    <!-- activity -->
+    <div class="card bg-base-100 shadow-xl p-6" th:if="${view == 'activity'}">
+        <table class="table table-sm">
+            <thead><tr><th>Action</th><th>By</th><th>Timestamp</th><th>Details</th></tr></thead>
+            <tbody>
+            <tr th:each="entry : ${auditPage.entries}">
+                <td th:text="${entry.action}"></td>
+                <td th:text="${entry.performedBy}"></td>
+                <td class="whitespace-nowrap" th:text="${entry.performedAt}"></td>
+                <td th:text="${entry.details}"></td>
+            </tr>
+            </tbody>
+        </table>
+        <p th:if="${#lists.isEmpty(auditPage.entries)}" class="opacity-60 mt-2">No activity yet.</p>
+        <div th:replace="~{explore/fragments/pager :: pager(${auditPage.page}, ${auditPage.totalPages})}"></div>
+    </div>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org" data-theme="sdmxdw">
+<head>
+    <meta charset="UTF-8"/>
+    <title>Codelist</title>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.23/dist/full.min.css" rel="stylesheet" type="text/css" />
+    <link rel="stylesheet" href="/css/brand.css" />
+    <link rel="icon" href="/img/favicon.png" />
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="min-h-screen bg-base-200">
+<div th:replace="~{fragments/nav :: nav}"></div>
+<div class="p-8 space-y-6">
+    <div class="card bg-base-100 shadow-xl p-6">
+        <h1 class="text-xl font-bold" th:text="${codelist.agencyId} + ':' + ${codelist.artefactId} + '(' + ${codelist.version} + ')'"></h1>
+        <p class="text-lg" th:text="${codelist.name}"></p>
+        <table class="table mt-4">
+            <thead><tr><th>Code</th><th>Name</th></tr></thead>
+            <tbody>
+            <tr th:each="code : ${codelist.codes}">
+                <td th:text="${code.code}"></td>
+                <td th:text="${code.name}"></td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="card bg-base-100 shadow-xl p-6 max-w-lg">
+        <h2 class="font-bold mb-4">Add code</h2>
+        <form method="post" th:action="@{/structures/codelists/{id}/codes(id=${codelist.id})}" class="space-y-2">
+            <input class="input input-bordered w-full" name="code" placeholder="Code (e.g. A)" required/>
+            <input class="input input-bordered w-full" name="name" placeholder="Name (e.g. Annual)" required/>
+            <button class="btn btn-primary" type="submit">Add</button>
+        </form>
+    </div>
+</div>
+</body>
+</html>

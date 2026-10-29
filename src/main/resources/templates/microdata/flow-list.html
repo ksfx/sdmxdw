@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org" data-theme="sdmxdw">
+<head>
+    <meta charset="UTF-8"/>
+    <title>Microdata</title>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.23/dist/full.min.css" rel="stylesheet" type="text/css" />
+    <link rel="stylesheet" href="/css/brand.css" />
+    <link rel="icon" href="/img/favicon.png" />
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="min-h-screen bg-base-200">
+<div th:replace="~{fragments/nav :: nav}"></div>
+<div class="p-8 space-y-6">
+    <div class="card bg-base-100 shadow-xl p-6">
+        <div class="flex justify-between items-center mb-4">
+            <h1 class="text-xl font-bold">Microdata flows</h1>
+            <a class="btn btn-primary btn-sm" th:href="@{/microdata/new}">New microdata flow</a>
+        </div>
+        <p class="text-sm opacity-70 mb-4">
+            Register-style unit-record data (e.g. individual loans) - one record per entity and reporting
+            period, not an SDMX cube. See the difference to the <a class="link link-primary" th:href="@{/structures/dataflows}">classic dataflow list</a>.
+        </p>
+        <table class="table">
+            <thead><tr><th>Agency</th><th>Id</th><th>Version</th><th>Name</th></tr></thead>
+            <tbody>
+            <tr th:each="flow : ${flows}">
+                <td th:text="${flow.agencyId}"></td>
+                <td><a class="link link-primary" th:href="@{/microdata/{id}(id=${flow.id})}" th:text="${flow.artefactId}"></a></td>
+                <td th:text="${flow.version}"></td>
+                <td th:text="${flow.name}"></td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,31 @@
+<div xmlns:th="http://www.thymeleaf.org" class="space-y-1">
+    <div th:if="${showFilter}" class="series-filter space-y-1"
+         th:attr="data-list-url=@{/explore/dataflows/{id}/series-fragment(id=${dataflowId},listOnly=true)}">
+        <div class="flex gap-1 items-center">
+            <input type="search" name="q" th:value="${query}"
+                   class="input input-bordered input-xs w-56" placeholder="Filter by key, e.g. DEMO01"
+                   th:attr="hx-get=@{/explore/dataflows/{id}/series-fragment(id=${dataflowId},listOnly=true)}"
+                   hx-include="closest .series-filter"
+                   hx-trigger="input changed delay:300ms, search" hx-target="next .series-list" hx-swap="outerHTML"/>
+            <button type="button" class="btn btn-xs btn-outline" onclick="DimensionFilter.toggle(this)"
+                    title="Filter by dimension codes">Dimensions ▾</button>
+        </div>
+        <div class="dim-filter hidden border border-base-300 rounded-box p-2" data-mode="event"
+             th:attr="data-facets-url=@{/explore/dataflows/{id}/facets(id=${dataflowId})}"></div>
+    </div>
+    <div th:fragment="list" class="series-list space-y-0.5">
+        <p th:if="${#lists.isEmpty(rows)}" class="text-xs opacity-60">No series</p>
+        <div th:each="row : ${rows}">
+            <a class="link link-primary link-hover text-sm font-mono"
+               th:text="${row.seriesKey}" th:title="${row.keyLabel}"
+               th:href="@{/explore/dataflows/{id}/series/{sid}(id=${dataflowId},sid=${row.seriesId})}"
+               th:attr="hx-get=@{/explore/dataflows/{id}/series/{sid}/panel(id=${dataflowId},sid=${row.seriesId})}"
+               hx-target="#detail-panel" hx-swap="innerHTML"></a>
+            <span class="text-xs opacity-50 ml-1" th:text="'(' + ${row.count} + ')'"></span>
+        </div>
+        <p th:if="${result.total > #lists.size(rows)}" class="text-xs opacity-70 pt-1">
+            <span th:text="'Showing ' + ${#lists.size(rows)} + ' of ' + ${#numbers.formatInteger(result.total, 1, 'COMMA')} + ' series.'"></span>
+            <a class="link link-primary" th:href="${dataflowPageUrl}">Browse all on the dataflow page</a>
+        </p>
+    </div>
+</div>
