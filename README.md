@@ -171,4 +171,10 @@ decrypted; with it and a dump, anyone can.
 
 ## Licence
 
-Not yet decided.
+SDMxDW is licensed under **MIT No Attribution (MIT-0)**, see [LICENSE](LICENSE): use, change and
+redistribute it for any purpose, without any conditions and without having to credit us.
+
+Third-party components keep their own licences: the libraries pulled in by Maven (mostly Apache 2.0,
+see `pom.xml`) and the bundled CodeMirror editor (MIT, see
+`src/main/resources/static/js/vendor/codemirror.js.LICENSE.txt`). If you redistribute the built
+JAR, include their licence notices. The name and logo "SDMxDW" are not covered by the licence.

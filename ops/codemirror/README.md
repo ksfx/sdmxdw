@@ -13,3 +13,4 @@ cp codemirror.js ../../src/main/resources/static/js/vendor/codemirror.js
 
 Built with codemirror 6.0.2. Exposes `window.SdmxdwEditor.attach(textarea, language, onSave)`
 with syntax highlighting for Python, R, SQL, YAML and JSON.
+Rebuild: regenerate `codemirror.js.LICENSE.txt` (licence texts of all bundled packages from `node_modules`) together with the bundle.
