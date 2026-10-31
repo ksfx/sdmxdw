@@ -1,3 +1,6 @@
+> [!CAUTION]
+> **For demonstration and testing purposes only.** This is not a production project.
+
 <p align="center"><img src="docs/images/logo.png" alt="SDMxDW logo" width="360"></p>
 
 # SDMxDW – the Statistical Data and Metadata Warehouse
