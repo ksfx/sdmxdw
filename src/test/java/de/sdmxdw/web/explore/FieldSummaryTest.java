@@ -15,6 +15,10 @@ class FieldSummaryTest {
         .isEqualTo("Dieses Feld erfasst die Limite gemäss Art. 53 Abs. 3 ERV.");
     assertThat(ExploreMicrodataFlowController.summary("z.B. Aktien, **Anleihen**.\n\nMehr."))
         .isEqualTo("z.B. Aktien, Anleihen.");
+    assertThat(
+            ExploreMicrodataFlowController.summary(
+                "Einzelnes Kreditprodukt, z. B. Festhypothek. Weiter."))
+        .isEqualTo("Einzelnes Kreditprodukt, z. B. Festhypothek.");
     assertThat(ExploreMicrodataFlowController.summary(null)).isNull();
   }
 

@@ -339,10 +339,14 @@ public class ExploreMicrodataFlowController {
     return end < 0 ? trimmed : trimmed.substring(0, end);
   }
 
-  /** A full stop before a capital letter, but not after abbreviations like "Art." or "z.B.". */
+  /**
+   * A full stop before a capital letter, but not after abbreviations like "Art.", "z. B." or "d.
+   * h.".
+   */
   private static final Pattern SENTENCE_END =
       Pattern.compile(
-          "(?<!\\b(?:Art|Abs|Ziff|Nr|Kap|bzw|vgl|ca|Bst|lit|al|bspw|inkl|z\\.B|z\\. B))\\.\\s+(?=[A-ZÄÖÜ])");
+          "(?<!\\b\\p{L})(?<!\\b(?:Art|Abs|Ziff|Nr|Kap|bzw|vgl|ca|Bst|lit|al|bspw|inkl))"
+              + "\\.\\s+(?=[A-ZÄÖÜ])");
 
   /** First sentence of a Markdown definition as plain text, for tooltips. */
   static String summary(String description) {
