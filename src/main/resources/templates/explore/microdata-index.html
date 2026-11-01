@@ -349,11 +349,15 @@
         const nodes = new vis.DataSet(graph.nodes.map(n => Object.assign(nodeView(n), {
             shape: n.linking ? 'ellipse' : 'box',
             margin: 14,
+            // hover like highlight: vis-network's default hover colour is light blue, unreadable with white text
             color: n.external
-                ? {background: '#f3f4f6', border: '#9ca3af', highlight: {background: '#e5e7eb', border: '#6b7280'}}
+                ? {background: '#f3f4f6', border: '#9ca3af', highlight: {background: '#e5e7eb', border: '#6b7280'},
+                   hover: {background: '#e5e7eb', border: '#6b7280'}}
                 : n.linking
-                    ? {background: '#13ad8f', border: '#0e7d67', highlight: {background: '#17c4a1', border: '#0e7d67'}}
-                    : {background: '#053771', border: '#032650', highlight: {background: '#06529b', border: '#032650'}},
+                    ? {background: '#13ad8f', border: '#0e7d67', highlight: {background: '#17c4a1', border: '#0e7d67'},
+                       hover: {background: '#17c4a1', border: '#0e7d67'}}
+                    : {background: '#053771', border: '#032650', highlight: {background: '#06529b', border: '#032650'},
+                       hover: {background: '#06529b', border: '#032650'}},
             shapeProperties: {borderDashes: n.external ? [5, 5] : false, borderRadius: 6},
             shadow: {enabled: true, color: 'rgba(0,0,0,0.15)', size: 8, x: 2, y: 3},
         })));
