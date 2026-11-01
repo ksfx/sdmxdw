@@ -41,8 +41,12 @@
     <!-- ===== overview: steps ===== -->
     <th:block th:if="${tab == 'overview'}">
         <div class="card bg-base-100 shadow-xl p-6" th:if="${!#lists.isEmpty(process.steps)}">
-            <h2 class="font-bold mb-2">Flow</h2>
-            <div id="step-graph" style="height: 220px;"></div>
+            <div class="flex justify-between items-center mb-2">
+                <h2 class="font-bold">Flow</h2>
+                <button type="button" class="btn btn-sm" onclick="openStepGraph()" title="Full screen with zoom (scroll) and pan (drag)">Enlarge</button>
+            </div>
+            <div id="step-graph" style="height: 200px;"></div>
+            <p class="text-xs opacity-60 mt-1">Click a step to highlight what it needs and what needs it, and to jump to it in the table below.</p>
         </div>
         <form class="card bg-base-100 shadow-xl p-6 space-y-3" method="post" th:action="@{/processes/{id}/steps(id=${process.id})}" id="steps-form">
             <div class="flex justify-between items-center">
@@ -127,6 +131,22 @@
                 <td><button type="button" class="btn btn-ghost btn-xs text-error" onclick="this.closest('tr').remove()">✕</button></td>
             </tr>
         </template>
+        <div id="step-graph-overlay" class="fixed inset-0 z-50 hidden bg-black/50 backdrop-blur-sm p-6">
+            <div class="bg-base-100 rounded-box shadow-2xl h-full flex flex-col">
+                <div class="flex items-center justify-between px-6 py-3 border-b border-base-300">
+                    <div>
+                        <h2 class="text-lg font-bold" th:text="${process.name} + ' - ' + ${#lists.size(process.steps)} + ' steps'"></h2>
+                        <p class="text-xs opacity-60">Scroll to zoom, drag to pan, click a step to highlight its dependencies,
+                            double-click to jump to it in the steps table.</p>
+                    </div>
+                    <div class="flex gap-2">
+                        <button type="button" class="btn btn-sm" onclick="stepOverlayNetwork &amp;&amp; stepOverlayNetwork.fit({animation: true})">Fit</button>
+                        <button type="button" class="btn btn-sm btn-primary" onclick="closeStepGraph()">Close</button>
+                    </div>
+                </div>
+                <div id="step-graph-canvas" class="flex-1"></div>
+            </div>
+        </div>
         <script src="https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
         <script th:inline="javascript">
             function showType(select) {
@@ -150,21 +170,94 @@
                 document.querySelectorAll('#steps tbody tr').forEach((row, i) =>
                     row.querySelectorAll('[data-f]').forEach(e => e.name = 'steps[' + i + '].' + e.dataset.f));
             });
-            const graph = /*[[${graphJson}]]*/ '{"nodes":[],"edges":[]}';
+            const graph = JSON.parse(/*[[${graphJson}]]*/ '{"nodes":[],"edges":[]}');
+            const STEP_COL = 220, STEP_ROW = 58, LEVEL_GAP = 80;
+
+            // Levels by dependency depth; a level with many parallel steps wraps into several columns
+            // instead of one endless column (e.g. one step per consistency rule).
+            function stepPositions(maxRows) {
+                const needs = {};
+                graph.nodes.forEach(n => needs[n.id] = []);
+                graph.edges.forEach(e => { if (needs[e.to] && needs[e.from]) needs[e.to].push(e.from); });
+                const level = {};
+                const depth = id => {
+                    if (level[id] != null) return level[id];
+                    level[id] = 0; // guards against cycles
+                    return level[id] = needs[id].length ? 1 + Math.max(...needs[id].map(depth)) : 0;
+                };
+                graph.nodes.forEach(n => depth(n.id));
+                const byLevel = [];
+                graph.nodes.forEach(n => (byLevel[level[n.id]] = byLevel[level[n.id]] || []).push(n.id));
+                const columns = byLevel.map(ids => ({ids, cols: Math.ceil(ids.length / maxRows)}))
+                    .map(l => Object.assign(l, {rows: Math.ceil(l.ids.length / l.cols)}));
+                const maxRowsUsed = Math.max(1, ...columns.map(l => l.rows));
+                const pos = {};
+                let x = 0;
+                columns.forEach(l => {
+                    const top = (maxRowsUsed - l.rows) * STEP_ROW / 2;
+                    l.ids.forEach((id, i) => pos[id] = {x: x + Math.floor(i / l.rows) * STEP_COL, y: top + (i % l.rows) * STEP_ROW});
+                    x += l.cols * STEP_COL + LEVEL_GAP;
+                });
+                return {pos, rows: maxRowsUsed, width: x};
+            }
+
+            function stepNetwork(container, maxRows, interactive) {
+                const layout = stepPositions(maxRows);
+                const nodes = graph.nodes.map(n => Object.assign({}, n, layout.pos[n.id], {title: n.label}));
+                const network = new vis.Network(container, {nodes: new vis.DataSet(nodes), edges: new vis.DataSet(graph.edges)}, {
+                    physics: false,
+                    interaction: {dragNodes: false, zoomView: interactive, dragView: interactive, hover: true, tooltipDelay: 300},
+                    nodes: {shape: 'box', margin: 8, widthConstraint: {maximum: STEP_COL - 30},
+                            font: {face: 'ui-monospace, monospace', size: 13}},
+                    edges: {arrows: {to: {enabled: true, scaleFactor: 0.6}}, width: 1,
+                            color: {color: '#cbd5e1', highlight: '#053771', hover: '#053771'},
+                            smooth: {type: 'cubicBezier', forceDirection: 'horizontal', roundness: 0.4}},
+                    groups: {SCRIPT: {color: {background: '#e0e7ff', border: '#053771', highlight: {background: '#c7d2fe', border: '#053771'}}},
+                             AGGREGATE: {color: {background: '#ccfbf1', border: '#13ad8f', highlight: {background: '#99f6e4', border: '#13ad8f'}}},
+                             PROMOTE: {color: {background: '#fef3c7', border: '#d97706', highlight: {background: '#fde68a', border: '#d97706'}}},
+                             PROCESS: {color: {background: '#f3f4f6', border: '#6b7280', highlight: {background: '#e5e7eb', border: '#6b7280'}}}}
+                });
+                network.once('afterDrawing', () => network.fit());
+                return {network, layout};
+            }
+
+            // jump to the step's row in the table and flash it
+            function showStepRow(key) {
+                const input = [...document.querySelectorAll('#steps [data-f=stepKey]')].find(i => i.value === key);
+                if (!input) return;
+                const row = input.closest('tr');
+                row.scrollIntoView({behavior: 'smooth', block: 'center'});
+                row.classList.add('bg-warning/30');
+                setTimeout(() => row.classList.remove('bg-warning/30'), 1800);
+            }
+
             const el = document.getElementById('step-graph');
-            if (el && window.vis) {
-                const data = JSON.parse(graph);
-                new vis.Network(el, {nodes: new vis.DataSet(data.nodes), edges: new vis.DataSet(data.edges)}, {
-                    layout: {hierarchical: {direction: 'LR', sortMethod: 'directed', levelSeparation: 220}},
-                    physics: false, interaction: {dragNodes: false, zoomView: false},
-                    nodes: {shape: 'box', margin: 10, font: {face: 'ui-monospace, monospace', size: 13, multi: false}},
-                    edges: {arrows: 'to', color: '#6b7280'},
-                    groups: {SCRIPT: {color: {background: '#e0e7ff', border: '#053771'}},
-                             AGGREGATE: {color: {background: '#ccfbf1', border: '#13ad8f'}},
-                             PROMOTE: {color: {background: '#fef3c7', border: '#d97706'}},
-                             PROCESS: {color: {background: '#f3f4f6', border: '#6b7280'}}}
+            if (el && window.vis && graph.nodes.length) {
+                const rows = stepPositions(10).rows;
+                el.style.height = Math.min(560, Math.max(140, rows * STEP_ROW * 0.85 + 40)) + 'px';
+                const inline = stepNetwork(el, 10, false).network;
+                inline.on('click', p => { if (p.nodes.length) showStepRow(p.nodes[0]); });
+            }
+
+            let stepOverlayNetwork = null;
+            function openStepGraph() {
+                const overlay = document.getElementById('step-graph-overlay');
+                overlay.classList.remove('hidden');
+                if (stepOverlayNetwork) stepOverlayNetwork.destroy();
+                const canvas = document.getElementById('step-graph-canvas');
+                // wrap so the graph roughly matches the screen's aspect ratio
+                const maxRows = Math.max(6, Math.round(Math.sqrt(graph.nodes.length * canvas.clientHeight / canvas.clientWidth * 2.5)));
+                stepOverlayNetwork = stepNetwork(canvas, maxRows, true).network;
+                stepOverlayNetwork.on('doubleClick', p => {
+                    if (!p.nodes.length) return;
+                    closeStepGraph();
+                    showStepRow(p.nodes[0]);
                 });
             }
+            function closeStepGraph() {
+                document.getElementById('step-graph-overlay').classList.add('hidden');
+            }
+            document.addEventListener('keydown', e => { if (e.key === 'Escape') closeStepGraph(); });
         </script>
     </th:block>
 
