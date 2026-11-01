@@ -147,6 +147,7 @@ public class ExploreMicrodataController {
               flow.name(),
               !schemeFlowIds.contains(flowId),
               requiredReferences >= 2 && !referencedByOthers,
+              ExploreMicrodataFlowController.summary(flow.description()),
               fields.stream()
                   .map(
                       f ->
@@ -158,7 +159,8 @@ public class ExploreMicrodataController {
                               f.groupCode(),
                               f.obligation(),
                               f.subtype(),
-                              f.subtypeRule()))
+                              f.subtypeRule(),
+                              ExploreMicrodataFlowController.summary(f.description())))
                   .toList()));
     }
     return new RelationGraph(scheme.artefactId(), scheme.name(), nodes, edges);
@@ -309,7 +311,8 @@ public class ExploreMicrodataController {
 
   /**
    * {@code linking} marks association entities: at least two mandatory references and not
-   * referenced by any other entity themselves (e.g. EKE "Rahmen - Sicherheit").
+   * referenced by any other entity themselves (e.g. EKE "Rahmen - Sicherheit"). {@code summary} is
+   * the first sentence of the flow description, shown in the detail panel (#23).
    */
   public record RelationNode(
       Long id,
@@ -317,8 +320,10 @@ public class ExploreMicrodataController {
       String name,
       boolean external,
       boolean linking,
+      String summary,
       List<RelationField> fields) {}
 
+  /** {@code summary}: first sentence of the field definition, shown as tooltip. */
   public record RelationField(
       String code,
       String label,
@@ -327,7 +332,8 @@ public class ExploreMicrodataController {
       String groupCode,
       String obligation,
       String subtype,
-      String subtypeRule) {}
+      String subtypeRule,
+      String summary) {}
 
   public record RelationEdge(Long from, Long to, String fieldCode, boolean required) {}
 

@@ -91,9 +91,10 @@
             <div>
                 <h2 class="text-lg font-bold" id="relations-title"></h2>
                 <p class="text-xs opacity-60">
-                    Click an entity to show or hide its attributes, drag to rearrange, scroll to zoom,
-                    double-click to open the flow. Arrows point from the referencing field to the
-                    referenced entity. M = mandatory, M* = mandatory with dependencies, ▸ = subtype.
+                    Click an entity to show its attributes and details with links to the documentation,
+                    drag to rearrange, scroll to zoom, double-click to open its records. Arrows point from
+                    the referencing field to the referenced entity. M = mandatory, M* = mandatory with
+                    dependencies, ▸ = subtype.
                 </p>
             </div>
             <div class="flex items-center gap-4 text-xs">
@@ -108,7 +109,10 @@
                 <button type="button" class="btn btn-sm btn-primary" onclick="closeRelations()">Close</button>
             </div>
         </div>
-        <div id="relations-canvas" class="flex-1"></div>
+        <div class="flex-1 flex min-h-0">
+            <div id="relations-canvas" class="flex-1"></div>
+            <aside id="relations-panel" class="hidden w-96 border-l border-base-300 overflow-y-auto p-5 text-sm"></aside>
+        </div>
     </div>
 </div>
 
@@ -234,6 +238,96 @@
         }
     }
 
+    // detail panel of the selected entity: summary, links to records and documentation, and every
+    // field linked to its definition (#23); built with textContent, the data is user-maintained
+    function el(tag, className, text) {
+        const e = document.createElement(tag);
+        if (className) e.className = className;
+        if (text != null) e.textContent = text;
+        return e;
+    }
+
+    function link(href, className, text) {
+        const a = el('a', className, text);
+        a.href = href;
+        a.target = '_blank';
+        return a;
+    }
+
+    function selectEntity(nodeId) {
+        relationsNetwork.selectNodes([nodeId]);
+        if (!expandedNodes.has(nodeId)) toggleAttributes(nodeId);
+        else relationsNetwork.focus(nodeId, {animation: true});
+        showPanel(nodeId);
+    }
+
+    function hidePanel() {
+        document.getElementById('relations-panel').classList.add('hidden');
+    }
+
+    function showPanel(nodeId) {
+        const node = relationsGraph.nodes.find(n => n.id === nodeId);
+        const panel = document.getElementById('relations-panel');
+        panel.replaceChildren();
+        panel.classList.remove('hidden');
+        const docUrl = '/explore/microdata/' + node.id + '?view=documentation';
+
+        const head = el('div', 'flex items-start justify-between gap-2');
+        const titles = el('div');
+        titles.appendChild(el('h3', 'text-lg font-bold', node.name));
+        titles.appendChild(el('div', 'text-xs opacity-60 font-mono', node.artefactId));
+        head.appendChild(titles);
+        const close = el('button', 'btn btn-xs btn-ghost', '✕');
+        close.type = 'button';
+        close.title = 'Close details';
+        close.onclick = hidePanel;
+        head.appendChild(close);
+        panel.appendChild(head);
+        if (node.summary) panel.appendChild(el('p', 'mt-2 opacity-80', node.summary));
+
+        const actions = el('div', 'flex gap-2 mt-3');
+        actions.appendChild(link(docUrl, 'btn btn-sm btn-primary', 'Documentation'));
+        actions.appendChild(link('/explore/microdata/' + node.id, 'btn btn-sm', 'Records'));
+        panel.appendChild(actions);
+
+        panel.appendChild(el('h4', 'font-semibold mt-5 mb-1', 'Fields (' + node.fields.length + ')'));
+        const list = el('ul', 'space-y-1');
+        const addField = f => {
+            const li = el('li', 'flex items-baseline gap-2');
+            const a = link(docUrl + '#field-' + encodeURIComponent(f.code), 'link link-hover flex-1', f.label);
+            a.title = f.code + (f.summary ? ': ' + f.summary : '');
+            li.appendChild(a);
+            if (f.type === 'REF') {
+                const edge = relationsGraph.edges.find(e => e.from === node.id && e.fieldCode === f.code);
+                const target = edge && relationsGraph.nodes.find(n => n.id === edge.to);
+                if (target) {
+                    const go = el('button', 'link link-primary text-xs', '→ ' + target.name);
+                    go.type = 'button';
+                    go.title = 'Show ' + target.name + ' in the graph';
+                    go.onclick = () => selectEntity(target.id);
+                    li.appendChild(go);
+                }
+            }
+            const ob = f.obligation || (f.required ? 'M' : '');
+            if (ob) li.appendChild(el('span', 'badge badge-xs', ob));
+            list.appendChild(li);
+        };
+        node.fields.filter(f => !f.subtype).forEach(addField);
+        const subtypes = [];
+        node.fields.filter(f => f.subtype).forEach(f => { if (!subtypes.includes(f.subtype)) subtypes.push(f.subtype); });
+        panel.appendChild(list);
+        subtypes.forEach(st => {
+            const fields = node.fields.filter(f => f.subtype === st);
+            const rule = fields.find(f => f.subtypeRule);
+            panel.appendChild(el('div', 'italic opacity-70 mt-3 mb-1', '▸ ' + st + (rule ? ' (' + rule.subtypeRule + ')' : '')));
+            const sub = el('ul', 'space-y-1 pl-3');
+            panel.appendChild(sub);
+            const before = list;
+            fields.forEach(f => { addField(f); sub.appendChild(before.lastChild); });
+        });
+        if (!node.fields.length) panel.appendChild(el('p', 'opacity-60', '(no fields)'));
+    }
+
     function setAllAttributes(show) {
         expandedNodes.clear();
         if (show) relationsGraph.nodes.forEach(n => expandedNodes.add(n.id));
@@ -247,6 +341,7 @@
         const graph = await (await fetch('/explore/microdata/category-schemes/' + schemeId + '/relations')).json();
         relationsGraph = graph;
         expandedNodes.clear();
+        hidePanel();
         document.getElementById('relations-all-attributes').checked = false;
         document.getElementById('relations-title').textContent =
             graph.schemeArtefactId + ' - ' + graph.schemeName + ' (' + graph.nodes.length + ' entities, ' + graph.edges.length + ' relations)';
@@ -301,11 +396,15 @@
         relationsNetwork.on('click', params => {
             if (!params.nodes.length) return;
             clearTimeout(clickTimer);
-            clickTimer = setTimeout(() => toggleAttributes(params.nodes[0]), 250);
+            const nodeId = params.nodes[0];
+            clickTimer = setTimeout(() => {
+                toggleAttributes(nodeId);
+                expandedNodes.has(nodeId) ? showPanel(nodeId) : hidePanel();
+            }, 250);
         });
         relationsNetwork.on('doubleClick', params => {
             clearTimeout(clickTimer);
-            if (params.nodes.length) window.open('/microdata/' + params.nodes[0], '_blank');
+            if (params.nodes.length) window.open('/explore/microdata/' + params.nodes[0], '_blank');
         });
     }
 </script>
