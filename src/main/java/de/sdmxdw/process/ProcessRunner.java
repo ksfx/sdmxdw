@@ -381,6 +381,8 @@ public class ProcessRunner implements ApplicationRunner {
     Path shared = files.folderPath(ProcessFiles.SHARED);
     env.put("PYTHONPATH", processDir + java.io.File.pathSeparator + shared);
     env.put("PYTHONIOENCODING", "utf-8");
+    // no __pycache__ folders in the (Git-linked) process folder
+    env.put("PYTHONDONTWRITEBYTECODE", "1");
     if (rLibs != null && !rLibs.isBlank()) {
       env.put("R_LIBS_USER", rLibs);
     }

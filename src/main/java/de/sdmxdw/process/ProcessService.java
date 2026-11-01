@@ -10,6 +10,8 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.support.CronExpression;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -24,6 +26,8 @@ import tools.jackson.databind.ObjectMapper;
  */
 @Service
 public class ProcessService {
+
+  private static final Logger log = LoggerFactory.getLogger(ProcessService.class);
 
   private static final Pattern STEP_KEY = Pattern.compile("[a-z0-9][a-z0-9_-]{0,49}");
   private static final Pattern PARAM_NAME = Pattern.compile("[a-z][a-z0-9_]{0,49}");
@@ -51,6 +55,7 @@ public class ProcessService {
   private final ProcessRunner runner;
   private final ProcessScheduler scheduler;
   private final ProcessSecretService secretService;
+  private final ProcessGitService gitService;
   private final AuditLogService auditLogService;
   private final ObjectMapper objectMapper;
 
@@ -62,6 +67,7 @@ public class ProcessService {
       ProcessRunner runner,
       ProcessScheduler scheduler,
       ProcessSecretService secretService,
+      ProcessGitService gitService,
       AuditLogService auditLogService,
       ObjectMapper objectMapper) {
     this.processRepository = processRepository;
@@ -71,6 +77,7 @@ public class ProcessService {
     this.runner = runner;
     this.scheduler = scheduler;
     this.secretService = secretService;
+    this.gitService = gitService;
     this.auditLogService = auditLogService;
     this.objectMapper = objectMapper;
   }
@@ -175,6 +182,14 @@ public class ProcessService {
                         new ProcessStep(
                             null, "main", ProcessStepType.SCRIPT, script, "", null, null, ""))));
     auditLogService.recordProcess(saved.id(), "CREATE_PROCESS", user, "folder " + cleanFolder);
+    if (script != null) {
+      // the starter script belongs in the linked Git repository like every other file
+      try {
+        gitService.commitAndPush(cleanFolder + "/" + script, "Create process " + cleanName, user);
+      } catch (IllegalArgumentException e) {
+        log.warn("Starter script of process {} not pushed: {}", cleanName, e.getMessage());
+      }
+    }
     return saved;
   }
 

@@ -74,6 +74,12 @@ class ProcessGitServiceTest extends AbstractIntegrationTest {
       assertThat(files.exists(ProcessFiles.SHARED, "sdmxdw_sdk.py")).isTrue();
       assertThat(remoteLog(bare).getFirst().getFullMessage()).startsWith("Import");
 
+      // a process created while linked pushes its starter script right away
+      Process later = processService.create("Git later " + sfx, null, null, "dm@x");
+      assertThat(remoteLog(bare).getFirst().getFullMessage())
+          .isEqualTo("Create process Git later " + sfx);
+      assertThat(gitService.history(later.folder() + "/main.py", 10)).hasSize(1);
+
       // save in the app: commit with the user as author, pushed
       String commit =
           codeService.save(p.folder(), "main.py", "print('from git')\n", "Change greeting", "dm@x");
