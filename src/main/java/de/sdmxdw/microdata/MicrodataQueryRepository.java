@@ -157,15 +157,21 @@ public class MicrodataQueryRepository {
 
   /**
    * Current Alpha records whose payload differs from the current Beta record (or that have none):
-   * what {@code MicrodataRecordService.promoteToBeta} would publish - same JSON comparison.
+   * what {@code MicrodataRecordService.promoteToBeta} would publish. Read from the table {@code
+   * microdata_pending} maintained on write (V19); only the shown page is joined with the records.
    */
   public List<PendingRecord> findPending(
       MicrodataQuery query, Map<String, FacetSlot> facetByField, int limit, int offset) {
     MapSqlParameterSource params = new MapSqlParameterSource();
     String sql =
-        "SELECT a.*, b.payload_json AS beta_payload"
-            + pendingFrom(query, facetByField, params)
-            + " ORDER BY a.reporting_period, a.entity_id LIMIT :limit OFFSET :offset";
+        "SELECT a.*, b.payload_json AS beta_payload FROM microdata_record a JOIN ("
+            + pendingKeys(query, facetByField, params)
+            + " ORDER BY p.reporting_period, p.entity_id LIMIT :limit OFFSET :offset) page"
+            + " ON page.record_id = a.id"
+            + " LEFT JOIN microdata_record b ON b.microdata_flow_id = a.microdata_flow_id"
+            + " AND b.entity_id = a.entity_id AND b.reporting_period = a.reporting_period"
+            + " AND b.stage = 'BETA' AND b.valid_to IS NULL"
+            + " ORDER BY a.reporting_period, a.entity_id";
     params.addValue("limit", limit).addValue("offset", offset);
     return jdbc.query(
         sql, params, (rs, i) -> new PendingRecord(map(rs), rs.getString("beta_payload")));
@@ -175,22 +181,41 @@ public class MicrodataQueryRepository {
     MapSqlParameterSource params = new MapSqlParameterSource();
     Long count =
         jdbc.queryForObject(
-            "SELECT count(*)" + pendingFrom(query, facetByField, params), params, Long.class);
+            "SELECT count(*) FROM (" + pendingKeys(query, facetByField, params) + ") k",
+            params,
+            Long.class);
     return count == null ? 0 : count;
   }
 
-  private static String pendingFrom(
+  /**
+   * {@code record_id, reporting_period, entity_id} of the pending records matching the query; only
+   * field and text filters need the records themselves.
+   */
+  private static String pendingKeys(
       MicrodataQuery query, Map<String, FacetSlot> facetByField, MapSqlParameterSource params) {
-    // the filter conditions use unqualified columns; run them on the Alpha side in a subquery
-    String alpha =
-        "SELECT * FROM microdata_record"
-            + where(query.withStage(MicrodataStage.ALPHA), facetByField, params);
-    return " FROM ("
-        + alpha
-        + ") a LEFT JOIN microdata_record b ON b.microdata_flow_id = a.microdata_flow_id"
-        + " AND b.entity_id = a.entity_id AND b.reporting_period = a.reporting_period"
-        + " AND b.stage = 'BETA' AND b.valid_to IS NULL"
-        + " WHERE b.payload_json IS DISTINCT FROM a.payload_json";
+    StringBuilder sql =
+        new StringBuilder(
+            "SELECT p.record_id, p.reporting_period, p.entity_id FROM microdata_pending p"
+                + " WHERE p.microdata_flow_id = :flowId");
+    params.addValue("flowId", query.flowId());
+    if (!query.reportingPeriods().isEmpty()) {
+      sql.append(" AND p.reporting_period IN (:periods)");
+      params.addValue("periods", query.reportingPeriods());
+    }
+    boolean filtered =
+        !query.fieldFilters().isEmpty()
+                && query.fieldFilters().values().stream().anyMatch(v -> !v.isEmpty())
+            || query.freeText() != null && !query.freeText().isBlank();
+    if (filtered) {
+      MapSqlParameterSource inner = new MapSqlParameterSource();
+      sql.append(" AND p.record_id IN (SELECT id FROM microdata_record")
+          .append(where(query.withStage(MicrodataStage.ALPHA), facetByField, inner))
+          .append(')');
+      for (String name : inner.getParameterNames()) {
+        params.addValue(name, inner.getValue(name));
+      }
+    }
+    return sql.toString();
   }
 
   /**
@@ -262,6 +287,8 @@ public class MicrodataQueryRepository {
                 + current
                 + ")",
             p);
+    // every current Alpha record now equals its Beta record
+    jdbc.update("DELETE FROM microdata_pending WHERE microdata_flow_id = :flow", p);
     return new int[] {promoted, unchanged == null ? 0 : unchanged};
   }
 
