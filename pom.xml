@@ -79,10 +79,10 @@
 			<artifactId>thymeleaf-extras-springsecurity6</artifactId>
 		</dependency>
 
+		<!-- compile scope: the microdata loader streams deliveries with COPY (CopyManager, #17) -->
 		<dependency>
 			<groupId>org.postgresql</groupId>
 			<artifactId>postgresql</artifactId>
-			<scope>runtime</scope>
 		</dependency>
 		<!-- Git-linked process folder (#20): clone, commit, push, pull without a git binary -->
 		<dependency>

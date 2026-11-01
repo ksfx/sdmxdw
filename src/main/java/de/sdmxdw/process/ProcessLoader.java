@@ -3,9 +3,9 @@ package de.sdmxdw.process;
 import de.sdmxdw.data.BulkLoadError;
 import de.sdmxdw.data.BulkLoadResult;
 import de.sdmxdw.data.observation.ObservationBulkLoader;
-import de.sdmxdw.microdata.MicrodataBulkLoader;
 import de.sdmxdw.microdata.MicrodataFlow;
 import de.sdmxdw.microdata.MicrodataFlowService;
+import de.sdmxdw.microdata.MicrodataStagingLoader;
 import de.sdmxdw.structure.dataflow.Dataflow;
 import de.sdmxdw.structure.dataflow.DataflowService;
 import java.io.IOException;
@@ -21,7 +21,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.TreeMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
@@ -34,33 +33,25 @@ import org.springframework.transaction.support.TransactionTemplate;
  * dataflow or microdata flow, {@code AG:ID(VERSION)/GROUP} for repeating group rows (with
  * ENTITY_ID, REPORTING_PERIOD, optional ITEM_NO). All targets of a step are loaded in one
  * transaction: if any file is invalid nothing is written; a dry run validates and counts, then
- * rolls back.
+ * rolls back. Files are read row by row; microdata rows go straight into staging tables, so the
+ * size of a delivery is not limited by memory (#17).
  */
 @Component
 public class ProcessLoader {
 
   private static final Pattern REF = Pattern.compile("([^:/]+):([^:(/]+)\\(([^)]+)\\)(?:/(.+))?");
-  private static final Set<String> MICRODATA_KEYS =
-      Set.of(
-          "STRUCTURE",
-          "STRUCTURE_ID",
-          "ACTION",
-          "DATAFLOW",
-          "ENTITY_ID",
-          "REPORTING_PERIOD",
-          "ITEM_NO");
 
   private final DataflowService dataflowService;
   private final MicrodataFlowService microdataFlowService;
   private final ObservationBulkLoader observationLoader;
-  private final MicrodataBulkLoader microdataLoader;
+  private final MicrodataStagingLoader microdataLoader;
   private final TransactionTemplate transactions;
 
   public ProcessLoader(
       DataflowService dataflowService,
       MicrodataFlowService microdataFlowService,
       ObservationBulkLoader observationLoader,
-      MicrodataBulkLoader microdataLoader,
+      MicrodataStagingLoader microdataLoader,
       TransactionTemplate transactions) {
     this.dataflowService = dataflowService;
     this.microdataFlowService = microdataFlowService;
@@ -104,11 +95,6 @@ public class ProcessLoader {
     if (files.isEmpty()) {
       return new StepLoadReport(dryRun, List.of(), List.of(), List.of());
     }
-    List<BulkLoadError> errors = new ArrayList<>();
-    // target -> rows; group rows keyed by "flowRef" and group code
-    Map<String, List<ObservationBulkLoader.Row>> observationRows = new LinkedHashMap<>();
-    Map<String, List<MainRow>> microdataRows = new LinkedHashMap<>();
-    Map<String, Map<String, List<GroupRow>>> groupRows = new LinkedHashMap<>();
     Map<String, Dataflow> dataflows = new HashMap<>();
     Map<String, MicrodataFlow> microdataFlows = new HashMap<>();
     dataflowService
@@ -118,142 +104,61 @@ public class ProcessLoader {
         .findAll()
         .forEach(f -> microdataFlows.put(ref(f.agencyId(), f.artefactId(), f.version()), f));
 
-    for (Path file : files) {
-      String name = outDir.relativize(file).toString();
-      HandoffFileReader.Table table;
-      try {
-        table = HandoffFileReader.read(file);
-      } catch (SQLException e) {
-        errors.add(new BulkLoadError(name, 0, "Cannot read file: " + e.getMessage()));
-        continue;
-      }
-      int structureColumn = table.columns().indexOf("STRUCTURE_ID");
-      if (structureColumn < 0) {
-        structureColumn = table.columns().indexOf("DATAFLOW");
-      }
-      if (structureColumn < 0) {
-        errors.add(new BulkLoadError(name, 0, "Missing column STRUCTURE_ID (SDMX-CSV)"));
-        continue;
-      }
-      int actionColumn = table.columns().indexOf("ACTION");
-      for (int r = 0; r < table.rows().size(); r++) {
-        List<String> row = table.rows().get(r);
-        int rowNumber = r + 1;
-        String action = actionColumn < 0 ? null : row.get(actionColumn);
-        if (action != null && !action.isBlank() && !action.equals("I") && !action.equals("R")) {
-          errors.add(
-              new BulkLoadError(
-                  name, rowNumber, "ACTION '" + action + "' is not supported (only I/R)"));
-          continue;
-        }
-        String structure = row.get(structureColumn);
-        Matcher m = structure == null ? null : REF.matcher(structure.strip());
-        if (m == null || !m.matches()) {
-          errors.add(
-              new BulkLoadError(name, rowNumber, "Invalid STRUCTURE_ID '" + structure + "'"));
-          continue;
-        }
-        String target = ref(m.group(1), m.group(2), m.group(3));
-        String group = m.group(4);
-        Map<String, String> values = new LinkedHashMap<>();
-        // empty values stay in the map: unknown columns are reported even when always empty
-        for (int c = 0; c < table.columns().size(); c++) {
-          values.put(table.columns().get(c), row.get(c));
-        }
-        if (dataflows.containsKey(target) && group == null) {
-          observationRows
-              .computeIfAbsent(target, k -> new ArrayList<>())
-              .add(new ObservationBulkLoader.Row(name, rowNumber, values));
-        } else if (microdataFlows.containsKey(target)) {
-          if (group == null) {
-            microdataRows
-                .computeIfAbsent(target, k -> new ArrayList<>())
-                .add(new MainRow(name, rowNumber, values));
-          } else {
-            groupRows
-                .computeIfAbsent(target, k -> new LinkedHashMap<>())
-                .computeIfAbsent(group, k -> new ArrayList<>())
-                .add(new GroupRow(name, rowNumber, values));
-          }
-        } else if (errors.stream().noneMatch(e -> e.message().contains("'" + target + "'"))) {
-          errors.add(new BulkLoadError(name, rowNumber, "Unknown flow '" + target + "'"));
-        }
-      }
-    }
-
-    // assemble microdata records (main row + group rows)
-    Map<String, List<MicrodataBulkLoader.Record>> records = new LinkedHashMap<>();
-    Map<Long, Set<String>> delivered = new HashMap<>();
-    for (Map.Entry<String, List<MainRow>> e : microdataRows.entrySet()) {
-      List<MicrodataBulkLoader.Record> list = new ArrayList<>();
-      Map<String, Map<String, List<Map<String, String>>>> groupsByRecord =
-          groupsByRecord(groupRows.getOrDefault(e.getKey(), Map.of()));
-      for (MainRow row : e.getValue()) {
-        String entity = row.values().get("ENTITY_ID");
-        String period = row.values().get("REPORTING_PERIOD");
-        Map<String, String> scalars = new LinkedHashMap<>(row.values());
-        MICRODATA_KEYS.forEach(scalars::remove);
-        Map<String, List<Map<String, String>>> groups =
-            groupsByRecord.getOrDefault(entity + "|" + period, Map.of());
-        list.add(
-            new MicrodataBulkLoader.Record(
-                row.file(), row.rowNumber(), entity, period, scalars, groups));
-        delivered
-            .computeIfAbsent(microdataFlows.get(e.getKey()).id(), k -> new HashSet<>())
-            .add(entity + "|" + period);
-      }
-      records.put(e.getKey(), list);
-    }
-    // group rows need their main record in the same delivery
-    groupRows.forEach(
-        (target, byGroup) -> {
-          Set<String> mains = new HashSet<>();
-          microdataRows
-              .getOrDefault(target, List.of())
-              .forEach(
-                  r ->
-                      mains.add(
-                          r.values().get("ENTITY_ID") + "|" + r.values().get("REPORTING_PERIOD")));
-          byGroup.forEach(
-              (group, rows) -> {
-                for (GroupRow r : rows) {
-                  String key =
-                      r.values().get("ENTITY_ID") + "|" + r.values().get("REPORTING_PERIOD");
-                  if (!mains.contains(key)) {
-                    errors.add(
-                        new BulkLoadError(
-                            r.file(),
-                            r.rowNumber(),
-                            "Group row for "
-                                + key.replace("|", " @ ")
-                                + " without its main record in the delivery"));
-                    return;
-                  }
-                }
-              });
-        });
-
+    List<BulkLoadError> errors = new ArrayList<>();
     List<TargetReport> targets = new ArrayList<>();
-    if (errors.isEmpty()) {
-      transactions.executeWithoutResult(
-          status -> {
+    // all targets of a step in one transaction; microdata rows are streamed into staging tables
+    // (#17), time series rows are collected per dataflow
+    transactions.executeWithoutResult(
+        status -> {
+          MicrodataStagingLoader.Session micro = microdataLoader.open(errors);
+          Map<String, List<ObservationBulkLoader.Row>> observationRows = new LinkedHashMap<>();
+          for (Path file : files) {
+            String name = outDir.relativize(file).toString();
+            try {
+              HandoffFileReader.stream(
+                  file,
+                  new FileRows(name, dataflows, microdataFlows, micro, observationRows, errors));
+            } catch (SQLException e) {
+              errors.add(new BulkLoadError(name, 0, "Cannot read file: " + e.getMessage()));
+            }
+            if (errors.size() >= MicrodataStagingLoader.MAX_ERRORS) {
+              break;
+            }
+          }
+          if (errors.isEmpty()) {
             for (Map.Entry<String, List<ObservationBulkLoader.Row>> e :
                 observationRows.entrySet()) {
               Dataflow df = dataflows.get(e.getKey());
               BulkLoadResult result = observationLoader.load(df.id(), e.getValue(), recordedBy);
-              collect(result, "dataflow", df.id(), targets, errors);
+              errors.addAll(result.errors());
+              targets.add(
+                  new TargetReport(
+                      "dataflow",
+                      df.id(),
+                      result.flowRef(),
+                      result.rows(),
+                      result.written(),
+                      result.unchanged()));
             }
-            for (Map.Entry<String, List<MicrodataBulkLoader.Record>> e : records.entrySet()) {
-              MicrodataFlow flow = microdataFlows.get(e.getKey());
-              BulkLoadResult result =
-                  microdataLoader.load(flow.id(), e.getValue(), delivered, recordedBy);
-              collect(result, "microdata", flow.id(), targets, errors);
+          }
+          // also with errors: finish() runs the checks across rows, but writes only when valid
+          if (errors.size() < MicrodataStagingLoader.MAX_ERRORS) {
+            for (MicrodataStagingLoader.FlowResult r : micro.finish(recordedBy)) {
+              MicrodataFlow f = r.flow();
+              targets.add(
+                  new TargetReport(
+                      "microdata",
+                      f.id(),
+                      ref(f.agencyId(), f.artefactId(), f.version()),
+                      r.rows(),
+                      r.written(),
+                      r.unchanged()));
             }
-            if (dryRun || !errors.isEmpty()) {
-              status.setRollbackOnly();
-            }
-          });
-    }
+          }
+          if (dryRun || !errors.isEmpty()) {
+            status.setRollbackOnly();
+          }
+        });
     return new StepLoadReport(
         dryRun,
         errors.isEmpty() ? targets : List.of(),
@@ -261,57 +166,94 @@ public class ProcessLoader {
         fileNames);
   }
 
-  private static void collect(
-      BulkLoadResult result,
-      String kind,
-      Long id,
-      List<TargetReport> targets,
-      List<BulkLoadError> errors) {
-    errors.addAll(result.errors());
-    targets.add(
-        new TargetReport(
-            kind, id, result.flowRef(), result.rows(), result.written(), result.unchanged()));
-  }
+  /** Routes the rows of one file by their STRUCTURE_ID to the time series or microdata loader. */
+  private static final class FileRows implements HandoffFileReader.RowHandler {
 
-  /** entity|period -> group -> items, ordered by ITEM_NO when given. */
-  private static Map<String, Map<String, List<Map<String, String>>>> groupsByRecord(
-      Map<String, List<GroupRow>> byGroup) {
-    Map<String, Map<String, List<Map<String, String>>>> result = new HashMap<>();
-    byGroup.forEach(
-        (group, rows) -> {
-          Map<String, TreeMap<Double, List<Map<String, String>>>> ordered = new HashMap<>();
-          int fallback = 0;
-          for (GroupRow r : rows) {
-            String key = r.values().get("ENTITY_ID") + "|" + r.values().get("REPORTING_PERIOD");
-            double order;
-            try {
-              order = Double.parseDouble(r.values().getOrDefault("ITEM_NO", ""));
-            } catch (NumberFormatException e) {
-              order = 1_000_000 + fallback;
-            }
-            fallback++;
-            Map<String, String> item = new LinkedHashMap<>(r.values());
-            MICRODATA_KEYS.forEach(item::remove);
-            ordered
-                .computeIfAbsent(key, k -> new TreeMap<>())
-                .computeIfAbsent(order, k -> new ArrayList<>())
-                .add(item);
-          }
-          ordered.forEach(
-              (key, tree) -> {
-                List<Map<String, String>> items = new ArrayList<>();
-                tree.values().forEach(items::addAll);
-                result.computeIfAbsent(key, k -> new LinkedHashMap<>()).put(group, items);
-              });
-        });
-    return result;
+    private final String name;
+    private final Map<String, Dataflow> dataflows;
+    private final Map<String, MicrodataFlow> microdataFlows;
+    private final MicrodataStagingLoader.Session micro;
+    private final Map<String, List<ObservationBulkLoader.Row>> observationRows;
+    private final List<BulkLoadError> errors;
+    private final Set<String> seenTargets = new HashSet<>();
+    private List<String> columns;
+    private int structureColumn;
+    private int actionColumn;
+
+    FileRows(
+        String name,
+        Map<String, Dataflow> dataflows,
+        Map<String, MicrodataFlow> microdataFlows,
+        MicrodataStagingLoader.Session micro,
+        Map<String, List<ObservationBulkLoader.Row>> observationRows,
+        List<BulkLoadError> errors) {
+      this.name = name;
+      this.dataflows = dataflows;
+      this.microdataFlows = microdataFlows;
+      this.micro = micro;
+      this.observationRows = observationRows;
+      this.errors = errors;
+    }
+
+    @Override
+    public void columns(List<String> names) {
+      columns = names;
+      structureColumn = names.indexOf("STRUCTURE_ID");
+      if (structureColumn < 0) {
+        structureColumn = names.indexOf("DATAFLOW");
+      }
+      if (structureColumn < 0) {
+        errors.add(new BulkLoadError(name, 0, "Missing column STRUCTURE_ID (SDMX-CSV)"));
+      }
+      actionColumn = names.indexOf("ACTION");
+    }
+
+    @Override
+    public void row(int rowNumber, List<String> row) {
+      if (structureColumn < 0 || errors.size() >= MicrodataStagingLoader.MAX_ERRORS) {
+        return;
+      }
+      String action = actionColumn < 0 ? null : row.get(actionColumn);
+      if (action != null && !action.isBlank() && !action.equals("I") && !action.equals("R")) {
+        errors.add(
+            new BulkLoadError(
+                name, rowNumber, "ACTION '" + action + "' is not supported (only I/R)"));
+        return;
+      }
+      String structure = row.get(structureColumn);
+      Matcher m = structure == null ? null : REF.matcher(structure.strip());
+      if (m == null || !m.matches()) {
+        errors.add(new BulkLoadError(name, rowNumber, "Invalid STRUCTURE_ID '" + structure + "'"));
+        return;
+      }
+      String target = ref(m.group(1), m.group(2), m.group(3));
+      String group = m.group(4);
+      Map<String, String> values = new LinkedHashMap<>();
+      // empty values stay in the map: unknown columns are reported even when always empty
+      for (int c = 0; c < columns.size(); c++) {
+        values.put(columns.get(c), row.get(c));
+      }
+      MicrodataFlow flow = microdataFlows.get(target);
+      if (dataflows.containsKey(target) && group == null) {
+        observationRows
+            .computeIfAbsent(target, k -> new ArrayList<>())
+            .add(new ObservationBulkLoader.Row(name, rowNumber, values));
+      } else if (flow != null) {
+        if (seenTargets.add(target + "/" + group)) {
+          micro.columns(name, flow, group, columns);
+        }
+        if (group == null) {
+          micro.record(name, rowNumber, flow, values);
+        } else {
+          micro.groupRow(name, rowNumber, flow, group, values);
+        }
+      } else if (seenTargets.add("unknown:" + target)) {
+        errors.add(new BulkLoadError(name, rowNumber, "Unknown flow '" + target + "'"));
+      }
+    }
   }
 
   static String ref(String agency, String id, String version) {
     return agency + ":" + id + "(" + version + ")";
   }
-
-  private record MainRow(String file, int rowNumber, Map<String, String> values) {}
-
-  private record GroupRow(String file, int rowNumber, Map<String, String> values) {}
 }

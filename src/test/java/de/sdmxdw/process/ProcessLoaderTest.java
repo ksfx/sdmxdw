@@ -17,6 +17,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.test.context.support.WithMockUser;
+import tools.jackson.databind.ObjectMapper;
 
 /** The file handoff: SDMX-CSV / Parquet deliveries loaded set-based into Alpha. */
 @WithMockUser(username = "process:test#1", roles = "DATENMANAGER")
@@ -26,6 +27,7 @@ class ProcessLoaderTest extends AbstractIntegrationTest {
   @Autowired private ProcessFixtures fixtures;
   @Autowired private ObservationService observationService;
   @Autowired private MicrodataRecordService recordService;
+  @Autowired private ObjectMapper objectMapper;
 
   @TempDir Path out;
 
@@ -214,6 +216,16 @@ class ProcessLoaderTest extends AbstractIntegrationTest {
     assertThat(recordService.parsePayload(l1.payloadJson()).groups().get("COLLATERAL"))
         .extracting(i -> i.get("TYPE"))
         .containsExactly("RE", "SEC");
+    // assembled in SQL, but byte for byte the JSON the services write (text comparisons, #17)
+    assertThat(l1.payloadJson())
+        .isEqualTo(objectMapper.writeValueAsString(recordService.parsePayload(l1.payloadJson())));
+    var l2 =
+        recordService
+            .findCurrentOne(m.loans().id(), "L-2", "2026-Q3", MicrodataStage.ALPHA)
+            .orElseThrow();
+    assertThat(l2.payloadJson())
+        .isEqualTo(objectMapper.writeValueAsString(recordService.parsePayload(l2.payloadJson())))
+        .endsWith("\"groups\":{\"COLLATERAL\":[]}}");
 
     clear();
     write(

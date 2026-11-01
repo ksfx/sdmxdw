@@ -565,7 +565,8 @@ public class MicrodataRecordService {
   }
 
   /**
-   * The stored payload format; shared with {@link MicrodataBulkLoader} so text comparisons match.
+   * The stored payload format; {@link MicrodataStagingLoader} writes the same text, so text
+   * comparisons match.
    */
   String toJson(MicrodataPayload payload) {
     try {
