@@ -15,10 +15,13 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 import org.postgresql.PGConnection;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
@@ -42,6 +45,8 @@ import tools.jackson.databind.ObjectMapper;
  */
 @Service
 public class MicrodataStagingLoader {
+
+  private static final Logger log = LoggerFactory.getLogger(MicrodataStagingLoader.class);
 
   public static final int MAX_ERRORS = 100;
   private static final int COPY_BATCH = 5_000;
@@ -78,6 +83,10 @@ public class MicrodataStagingLoader {
     jdbc.execute(
         "CREATE TEMP TABLE md_load (flow_id BIGINT, entity_id TEXT, period TEXT, f1 TEXT,"
             + " f2 TEXT, f3 TEXT, f4 TEXT, scalars TEXT, file TEXT, row_no INT) ON COMMIT DROP");
+    jdbc.execute("DROP TABLE IF EXISTS md_load_ref");
+    jdbc.execute(
+        "CREATE TEMP TABLE md_load_ref (target_id BIGINT, entity_id TEXT, period TEXT,"
+            + " field TEXT, file TEXT, row_no INT) ON COMMIT DROP");
     jdbc.execute(
         "CREATE TEMP TABLE md_load_group (flow_id BIGINT, entity_id TEXT, period TEXT,"
             + " group_code TEXT, item_no DOUBLE PRECISION, seq INT, item TEXT, file TEXT,"
@@ -123,6 +132,9 @@ public class MicrodataStagingLoader {
     private final Set<String> reported = new HashSet<>();
     private final StringBuilder mainBuffer = new StringBuilder();
     private final StringBuilder groupBuffer = new StringBuilder();
+    private final StringBuilder refBuffer = new StringBuilder();
+    private int refBuffered;
+    private final long started = System.nanoTime();
     private int mainBuffered;
     private int groupBuffered;
     private int groupSeq;
@@ -189,6 +201,20 @@ public class MicrodataStagingLoader {
         String value = clean(values.get(f.fieldCode()));
         check(info, f, value, file, row);
         scalars.put(f.fieldCode(), value);
+        if (f.referencedFlowId() != null && value != null) {
+          // collected here, so the reference check does not have to parse every payload
+          appendRow(
+              refBuffer,
+              String.valueOf(f.referencedFlowId()),
+              value,
+              period,
+              f.fieldCode(),
+              file,
+              String.valueOf(row));
+          if (++refBuffered >= COPY_BATCH) {
+            flushRefs();
+          }
+        }
         if (f.facetSlot() != null) {
           facets[f.facetSlot().ordinal()] = value;
         }
@@ -274,6 +300,11 @@ public class MicrodataStagingLoader {
       mainBuffered = 0;
     }
 
+    private void flushRefs() {
+      copy("COPY md_load_ref FROM STDIN WITH (FORMAT csv)", refBuffer);
+      refBuffered = 0;
+    }
+
     private void flushGroups() {
       copy("COPY md_load_group FROM STDIN WITH (FORMAT csv)", groupBuffer);
       groupBuffered = 0;
@@ -306,6 +337,8 @@ public class MicrodataStagingLoader {
     public List<FlowResult> finish(String recordedBy) {
       flushMain();
       flushGroups();
+      flushRefs();
+      long read = System.nanoTime();
       if (full()) {
         return List.of();
       }
@@ -313,19 +346,22 @@ public class MicrodataStagingLoader {
       jdbc.execute("CREATE INDEX ON md_load_group (flow_id, entity_id, period, group_code)");
       jdbc.execute("ANALYZE md_load");
       jdbc.execute("ANALYZE md_load_group");
+      jdbc.execute("ANALYZE md_load_ref");
       checkDuplicates();
       checkOrphanGroupRows();
-      for (FlowInfo info : flows.values()) {
-        for (FieldDefinition f : info.scalars) {
-          if (f.referencedFlowId() != null && !full()) {
-            checkReferences(info, f);
-          }
-        }
-      }
+      checkReferences();
+      long checked = System.nanoTime();
       if (!errors.isEmpty()) {
         return List.of();
       }
-      return write(recordedBy);
+      List<FlowResult> results = write(recordedBy);
+      log.info(
+          "Microdata delivery of {} flows: read and staged {} s, checks {} s, write {} s",
+          results.size(),
+          seconds(started, read),
+          seconds(read, checked),
+          seconds(checked, System.nanoTime()));
+      return results;
     }
 
     private void checkDuplicates() {
@@ -366,32 +402,25 @@ public class MicrodataStagingLoader {
     }
 
     /** A reference must point to a record of the same period: delivered now or current Alpha. */
-    private void checkReferences(FlowInfo info, FieldDefinition f) {
-      MapSqlParameterSource p =
-          new MapSqlParameterSource("flow", info.flow.id())
-              .addValue("target", f.referencedFlowId())
-              .addValue("field", f.fieldCode());
-      named.query(
-          "SELECT l.file, l.row_no, r.val, l.period FROM md_load l,"
-              + " LATERAL (SELECT l.scalars::jsonb ->> :field AS val) r"
-              + " WHERE l.flow_id = :flow AND r.val IS NOT NULL"
-              + " AND NOT EXISTS (SELECT 1 FROM md_load t WHERE t.flow_id = :target"
-              + " AND t.entity_id = r.val AND t.period = l.period)"
+    private void checkReferences() {
+      jdbc.query(
+          "SELECT r.file, r.row_no, r.field, r.entity_id, r.period FROM md_load_ref r"
+              + " WHERE NOT EXISTS (SELECT 1 FROM md_load t WHERE t.flow_id = r.target_id"
+              + " AND t.entity_id = r.entity_id AND t.period = r.period)"
               + " AND NOT EXISTS (SELECT 1 FROM microdata_record m"
-              + " WHERE m.microdata_flow_id = :target AND m.entity_id = r.val"
-              + " AND m.reporting_period = l.period AND m.stage = 'ALPHA' AND m.valid_to IS NULL)"
-              + " ORDER BY l.file, l.row_no LIMIT "
+              + " WHERE m.microdata_flow_id = r.target_id AND m.entity_id = r.entity_id"
+              + " AND m.reporting_period = r.period AND m.stage = 'ALPHA' AND m.valid_to IS NULL)"
+              + " ORDER BY r.file, r.row_no LIMIT "
               + MAX_ERRORS,
-          p,
           rs -> {
             error(
                 rs.getString(1),
                 rs.getInt(2),
-                f.fieldCode()
+                rs.getString(3)
                     + " references unknown entity '"
-                    + rs.getString(3)
+                    + rs.getString(4)
                     + "' for "
-                    + rs.getString(4));
+                    + rs.getString(5));
           });
     }
 
@@ -519,5 +548,9 @@ public class MicrodataStagingLoader {
 
   private static String clean(String value) {
     return value == null || value.isBlank() ? null : value.strip();
+  }
+
+  private static String seconds(long from, long to) {
+    return String.format(Locale.ROOT, "%.1f", (to - from) / 1e9);
   }
 }

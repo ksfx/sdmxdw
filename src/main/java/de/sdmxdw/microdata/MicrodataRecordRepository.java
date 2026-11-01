@@ -64,11 +64,6 @@ public interface MicrodataRecordRepository extends ListCrudRepository<MicrodataR
   List<String> findDistinctReportingPeriods(@Param("stage") String stage);
 
   @Query(
-      "SELECT * FROM microdata_record WHERE microdata_flow_id = :flowId AND stage = :stage"
-          + " AND valid_to IS NULL ORDER BY entity_id, reporting_period")
-  List<MicrodataRecord> findAllCurrent(@Param("flowId") Long flowId, @Param("stage") String stage);
-
-  @Query(
       "SELECT * FROM microdata_record WHERE microdata_flow_id = :flowId AND entity_id = :entityId"
           + " AND reporting_period = :reportingPeriod AND stage = :stage ORDER BY valid_from")
   List<MicrodataRecord> findHistory(

@@ -216,4 +216,76 @@ public class MicrodataQueryRepository {
         rs.getString("recorded_by"),
         rs.getString("comment"));
   }
+
+  /**
+   * Publishes the current Alpha records of a flow set-based (#17): records whose current Beta
+   * vintage has the same payload stay, changed Beta vintages are closed, and the Alpha records
+   * without an equal Beta vintage are inserted as new Beta vintages.
+   *
+   * @return {promoted, unchanged}
+   */
+  public int[] promoteAll(Long flowId, Timestamp now, String recordedBy) {
+    MapSqlParameterSource p =
+        new MapSqlParameterSource("flow", flowId).addValue("now", now).addValue("by", recordedBy);
+    String current =
+        " b.microdata_flow_id = a.microdata_flow_id AND b.entity_id = a.entity_id"
+            + " AND b.reporting_period = a.reporting_period AND b.stage = 'BETA'"
+            + " AND b.valid_to IS NULL";
+    String alpha = " a.microdata_flow_id = :flow AND a.stage = 'ALPHA' AND a.valid_to IS NULL";
+    Integer unchanged =
+        jdbc.queryForObject(
+            "SELECT count(*) FROM microdata_record a JOIN microdata_record b ON"
+                + current
+                + " WHERE"
+                + alpha
+                + " AND b.payload_json = a.payload_json",
+            p,
+            Integer.class);
+    jdbc.update(
+        "UPDATE microdata_record b SET valid_to = :now FROM microdata_record a WHERE"
+            + alpha
+            + " AND"
+            + current
+            + " AND b.payload_json <> a.payload_json",
+        p);
+    int promoted =
+        jdbc.update(
+            "INSERT INTO microdata_record (microdata_flow_id, entity_id, reporting_period, stage,"
+                + " facet1_value, facet2_value, facet3_value, facet4_value, payload_json,"
+                + " valid_from, recorded_by, comment)"
+                + " SELECT a.microdata_flow_id, a.entity_id, a.reporting_period, 'BETA',"
+                + " a.facet1_value, a.facet2_value, a.facet3_value, a.facet4_value,"
+                + " a.payload_json, :now, 'promotion:' || :by, a.comment"
+                + " FROM microdata_record a WHERE"
+                + alpha
+                + " AND NOT EXISTS (SELECT 1 FROM microdata_record b WHERE"
+                + current
+                + ")",
+            p);
+    return new int[] {promoted, unchanged == null ? 0 : unchanged};
+  }
+
+  /** Number of current records per facet values and reporting period, for the aggregation. */
+  public void countByFacets(Long flowId, String stage, Consumer<FacetCount> consumer) {
+    jdbc.query(
+        "SELECT coalesce(facet1_value, ''), coalesce(facet2_value, ''), coalesce(facet3_value, ''),"
+            + " coalesce(facet4_value, ''), reporting_period, count(*) FROM microdata_record"
+            + " WHERE microdata_flow_id = :flow AND stage = :stage AND valid_to IS NULL"
+            + " GROUP BY 1, 2, 3, 4, 5",
+        new MapSqlParameterSource("flow", flowId).addValue("stage", stage),
+        rs -> {
+          consumer.accept(
+              new FacetCount(
+                  List.of(
+                      rs.getString(1),
+                      rs.getString(2),
+                      rs.getString(3),
+                      rs.getString(4),
+                      rs.getString(5)),
+                  rs.getLong(6)));
+        });
+  }
+
+  /** {@code key}: facet1..facet4 (empty for none) and the reporting period. */
+  public record FacetCount(List<String> key, long count) {}
 }

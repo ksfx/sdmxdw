@@ -10,6 +10,7 @@ import de.sdmxdw.structure.dsd.DataStructureDefinitionService;
 import de.sdmxdw.structure.dsd.DataType;
 import de.sdmxdw.structure.dsd.Dimension;
 import de.sdmxdw.structure.dsd.Measure;
+import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -19,7 +20,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Consumer;
-import java.util.stream.Collectors;
 import org.springframework.security.access.prepost.PostAuthorize;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
@@ -445,37 +445,10 @@ public class MicrodataRecordService {
   @PreAuthorize("hasRole('DATENMANAGER')")
   @Transactional
   public PromotionResult promoteToBeta(Long flowId, String performedBy) {
-    List<MicrodataRecord> currentAlpha =
-        microdataRecordRepository.findAllCurrent(flowId, MicrodataStage.ALPHA.name());
-    int promoted = 0;
-    int unchanged = 0;
-    Instant now = Instant.now();
-    for (MicrodataRecord alpha : currentAlpha) {
-      Optional<MicrodataRecord> currentBeta =
-          microdataRecordRepository.findCurrentOne(
-              flowId, alpha.entityId(), alpha.reportingPeriod(), MicrodataStage.BETA.name());
-      if (currentBeta.isPresent() && currentBeta.get().payloadJson().equals(alpha.payloadJson())) {
-        unchanged++;
-        continue;
-      }
-      microdataRecordRepository.closeCurrentVintage(
-          flowId, alpha.entityId(), alpha.reportingPeriod(), MicrodataStage.BETA.name(), now);
-      microdataRecordRepository.save(
-          MicrodataRecord.createNew(
-              flowId,
-              alpha.entityId(),
-              alpha.reportingPeriod(),
-              MicrodataStage.BETA,
-              alpha.facet1Value(),
-              alpha.facet2Value(),
-              alpha.facet3Value(),
-              alpha.facet4Value(),
-              alpha.payloadJson(),
-              now,
-              "promotion:" + performedBy,
-              alpha.comment()));
-      promoted++;
-    }
+    int[] counts =
+        microdataQueryRepository.promoteAll(flowId, Timestamp.from(Instant.now()), performedBy);
+    int promoted = counts[0];
+    int unchanged = counts[1];
     auditLogService.recordMicrodata(
         flowId,
         "PROMOTE_ALPHA_TO_BETA",
@@ -516,20 +489,10 @@ public class MicrodataRecordService {
             .min(Comparator.naturalOrder())
             .orElseThrow(() -> new IllegalStateException("Target DSD has no measure"));
 
-    List<MicrodataRecord> currentBeta =
-        microdataRecordRepository.findAllCurrent(flowId, MicrodataStage.BETA.name());
-    Map<List<String>, Long> counts =
-        currentBeta.stream()
-            .collect(
-                Collectors.groupingBy(
-                    r ->
-                        List.of(
-                            nullToEmpty(r.facet1Value()),
-                            nullToEmpty(r.facet2Value()),
-                            nullToEmpty(r.facet3Value()),
-                            nullToEmpty(r.facet4Value()),
-                            r.reportingPeriod()),
-                    Collectors.counting()));
+    // counted in PostgreSQL; a flow can hold millions of records (#17)
+    Map<List<String>, Long> counts = new LinkedHashMap<>();
+    microdataQueryRepository.countByFacets(
+        flowId, MicrodataStage.BETA.name(), c -> counts.put(c.key(), c.count()));
 
     int written = 0;
     for (Map.Entry<List<String>, Long> entry : counts.entrySet()) {
@@ -578,10 +541,6 @@ public class MicrodataRecordService {
 
   private static String blankToNull(String value) {
     return value == null || value.isBlank() ? null : value;
-  }
-
-  private static String nullToEmpty(String value) {
-    return value == null ? "" : value;
   }
 
   public record PageResult(List<MicrodataRecord> records, long totalCount, int page, int size) {}

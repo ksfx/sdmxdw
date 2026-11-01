@@ -45,6 +45,9 @@ final class HandoffFileReader {
                 + " quote = '\"', escape = '\"')";
     try (Connection connection = DriverManager.getConnection("jdbc:duckdb:");
         Statement st = connection.createStatement()) {
+      // DuckDB takes up to 80 % of the machine's memory by default, outside the Java heap
+      st.execute("SET memory_limit = '256MB'");
+      st.execute("SET threads = 2");
       st.setFetchSize(2048);
       try (ResultSet rs = st.executeQuery("SELECT * FROM " + source)) {
         ResultSetMetaData meta = rs.getMetaData();
