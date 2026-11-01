@@ -14,9 +14,10 @@
     <div class="card bg-base-100 shadow-xl p-6">
         <h1 class="text-xl font-bold" th:text="${flow.agencyId} + ':' + ${flow.artefactId} + '(' + ${flow.version} + ')'"></h1>
         <p class="text-lg" th:text="${flow.name}"></p>
-        <p class="text-sm opacity-70" th:if="${flow.description}" th:text="${flow.description}"></p>
         <div class="mt-4 space-x-2">
             <a class="btn btn-primary btn-sm" th:href="@{/explore/microdata/{id}(id=${flow.id})}">View data in explorer</a>
+            <a class="btn btn-sm" th:href="@{/explore/microdata/{id}(id=${flow.id},view='documentation')}"
+               title="Description of the flow and definitions of the fields, editable there">Documentation</a>
         </div>
     </div>
 

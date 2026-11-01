@@ -203,4 +203,70 @@ class ExploreMicrodataFlowPageTest extends AbstractIntegrationTest {
         .contains("PROMOTE_ALPHA_TO_BETA")
         .contains("CORRECT_RECORD");
   }
+
+  @Test
+  void documentationIsShownToEveryoneAndEditedByDatenmanager() throws Exception {
+    MicrodataFlow flow = flow();
+    String base = "/explore/microdata/" + flow.id();
+    Long currencyId =
+        asDatenmanager(
+            () ->
+                flowService.findFields(flow.id()).stream()
+                    .filter(f -> f.fieldCode().equals("CURRENCY"))
+                    .findFirst()
+                    .orElseThrow()
+                    .id());
+
+    // the economist sees the tab but no edit forms
+    assertThat(body(get(base).param("view", "documentation").with(oekonom)))
+        .contains("Documentation")
+        .contains("id=\"field-CURRENCY\"")
+        .contains("Swiss franc")
+        .doesNotContain("Edit documentation");
+    mvc.perform(
+            post(base + "/fields/" + currencyId + "/documentation")
+                .param("description", "x")
+                .with(oekonom)
+                .with(csrf()))
+        .andExpect(status().isForbidden());
+
+    mvc.perform(
+            post(base + "/documentation")
+                .param("description", "Loans of the **demo** bank.\n\nSecond paragraph.")
+                .with(dm)
+                .with(csrf()))
+        .andExpect(status().is3xxRedirection());
+    mvc.perform(
+            post(base + "/fields/" + currencyId + "/documentation")
+                .param("description", "Currency of the *loan*. Further text.")
+                .param("attributes", "Field id: XY-01\nTechnical name: ccy")
+                .with(dm)
+                .with(csrf()))
+        .andExpect(status().is3xxRedirection());
+    mvc.perform(
+            post(base + "/fields/" + currencyId + "/documentation")
+                .param("attributes", "no colon here")
+                .with(dm)
+                .with(csrf()))
+        .andExpect(status().is3xxRedirection());
+
+    String doc = body(get(base).param("view", "documentation").with(oekonom));
+    assertThat(doc)
+        .contains("Loans of the <strong>demo</strong> bank.")
+        .contains("Second paragraph.")
+        .contains("Currency of the <em>loan</em>.")
+        .contains("XY-01")
+        .contains("Technical name");
+    // the header only shows the first paragraph
+    assertThat(body(get(base).with(oekonom)))
+        .contains("Loans of the <strong>demo</strong> bank.")
+        .doesNotContain("Second paragraph.");
+    // the record page links the label to the definition, with its first sentence as tooltip
+    MicrodataRecord published = current(flow, "L-1", MicrodataStage.BETA);
+    assertThat(body(get(base + "/records/" + published.id()).with(oekonom)))
+        .contains("#field-CURRENCY")
+        .contains("CURRENCY: Currency of the loan.");
+    assertThat(body(get(base).param("view", "activity").with(dm)))
+        .contains("Documentation of field CURRENCY updated");
+  }
 }

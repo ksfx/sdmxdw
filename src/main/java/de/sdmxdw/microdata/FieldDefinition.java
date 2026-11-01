@@ -18,7 +18,9 @@ public record FieldDefinition(
     int position,
     String obligation,
     String subtype,
-    String subtypeRule) {
+    String subtypeRule,
+    String description,
+    String attributes) {
 
   public static FieldDefinition createNew(
       Long microdataFlowId,
@@ -45,6 +47,8 @@ public record FieldDefinition(
         position,
         null,
         null,
+        null,
+        null,
         null);
   }
 
@@ -64,6 +68,32 @@ public record FieldDefinition(
         position,
         newObligation,
         newSubtype,
-        newSubtypeRule);
+        newSubtypeRule,
+        description,
+        attributes);
+  }
+
+  /**
+   * @param newDescription definition of the field as Markdown
+   * @param newAttributes further source attributes as a JSON object in display order
+   */
+  public FieldDefinition withDescription(String newDescription, String newAttributes) {
+    return new FieldDefinition(
+        id,
+        microdataFlowId,
+        fieldCode,
+        label,
+        dataType,
+        codelistId,
+        required,
+        facetSlot,
+        groupCode,
+        referencedFlowId,
+        position,
+        obligation,
+        subtype,
+        subtypeRule,
+        newDescription,
+        newAttributes);
   }
 }

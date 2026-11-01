@@ -15,11 +15,12 @@
         <h1 class="text-xl font-bold" th:text="${codelist.agencyId} + ':' + ${codelist.artefactId} + '(' + ${codelist.version} + ')'"></h1>
         <p class="text-lg" th:text="${codelist.name}"></p>
         <table class="table mt-4">
-            <thead><tr><th>Code</th><th>Name</th></tr></thead>
+            <thead><tr><th>Code</th><th>Name</th><th>Description</th></tr></thead>
             <tbody>
-            <tr th:each="code : ${codelist.codes}">
-                <td th:text="${code.code}"></td>
+            <tr th:each="code : ${codes}" th:id="'code-' + ${code.code}">
+                <td class="font-mono" th:text="${code.code}"></td>
                 <td th:text="${code.name}"></td>
+                <td class="text-sm opacity-80" th:text="${code.description} ?: ''"></td>
             </tr>
             </tbody>
         </table>
@@ -30,6 +31,7 @@
         <form method="post" th:action="@{/structures/codelists/{id}/codes(id=${codelist.id})}" class="space-y-2">
             <input class="input input-bordered w-full" name="code" placeholder="Code (e.g. A)" required/>
             <input class="input input-bordered w-full" name="name" placeholder="Name (e.g. Annual)" required/>
+            <textarea class="textarea textarea-bordered w-full" name="description" placeholder="Description (optional)"></textarea>
             <button class="btn btn-primary" type="submit">Add</button>
         </form>
     </div>

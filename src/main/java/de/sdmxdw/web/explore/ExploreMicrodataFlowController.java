@@ -1,6 +1,7 @@
 package de.sdmxdw.web.explore;
 
 import de.sdmxdw.data.audit.AuditLogService;
+import de.sdmxdw.microdata.FieldAttributes;
 import de.sdmxdw.microdata.FieldDataType;
 import de.sdmxdw.microdata.FieldDefinition;
 import de.sdmxdw.microdata.MicrodataFlow;
@@ -12,7 +13,9 @@ import de.sdmxdw.microdata.MicrodataRecord;
 import de.sdmxdw.microdata.MicrodataRecordService;
 import de.sdmxdw.microdata.MicrodataStage;
 import de.sdmxdw.structure.codelist.Code;
+import de.sdmxdw.structure.codelist.Codelist;
 import de.sdmxdw.structure.codelist.CodelistService;
+import de.sdmxdw.web.MarkdownRenderer;
 import de.sdmxdw.web.Roles;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -21,6 +24,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.TreeMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
@@ -39,7 +44,8 @@ import org.springframework.web.util.UriComponentsBuilder;
  * The microdata flow page of the explorer, same pattern as the time series dataflow page: everyone
  * browses published (Beta) records; Datenmanager additionally get the stage switch, pending changes
  * (Alpha vs Beta), promotion, aggregation to SDMX, the activity log and the correction of records
- * (#16). The services enforce the role rules.
+ * (#16). The documentation tab shows the description of the flow and of every field with its codes
+ * to everyone; Datenmanager edit it there (#23). The services enforce the role rules.
  */
 @Controller
 @RequestMapping("/explore/microdata/{flowId}")
@@ -53,6 +59,7 @@ public class ExploreMicrodataFlowController {
 
   enum View {
     records,
+    documentation,
     pending,
     activity
   }
@@ -61,16 +68,19 @@ public class ExploreMicrodataFlowController {
   private final MicrodataRecordService recordService;
   private final CodelistService codelistService;
   private final AuditLogService auditLogService;
+  private final MarkdownRenderer markdown;
 
   public ExploreMicrodataFlowController(
       MicrodataFlowService flowService,
       MicrodataRecordService recordService,
       CodelistService codelistService,
-      AuditLogService auditLogService) {
+      AuditLogService auditLogService,
+      MarkdownRenderer markdown) {
     this.flowService = flowService;
     this.recordService = recordService;
     this.codelistService = codelistService;
     this.auditLogService = auditLogService;
+    this.markdown = markdown;
   }
 
   // --- flow page -------------------------------------------------------------------------------
@@ -117,6 +127,8 @@ public class ExploreMicrodataFlowController {
         });
 
     model.addAttribute("flow", flow);
+    model.addAttribute(
+        "descriptionSummaryHtml", markdown.render(firstParagraph(flow.description())));
     model.addAttribute("isDatenmanager", dm);
     model.addAttribute("view", selectedView.name());
     model.addAttribute("stage", selectedStage.name());
@@ -168,6 +180,10 @@ public class ExploreMicrodataFlowController {
       case activity ->
           model.addAttribute(
               "auditPage", auditLogService.findByMicrodataFlow(flowId, page, AUDIT_PAGE_SIZE));
+      case documentation -> {
+        model.addAttribute("descriptionHtml", markdown.render(flow.description()));
+        model.addAttribute("fieldDocs", fields.stream().map(this::fieldDoc).toList());
+      }
     }
     return "explore/microdata-flow";
   }
@@ -236,6 +252,110 @@ public class ExploreMicrodataFlowController {
     return "redirect:/explore/microdata/" + flowId + "?view=activity";
   }
 
+  // --- documentation (#23)
+  // ------------------------------------------------------------------------
+
+  @PostMapping("/documentation")
+  public String describeFlow(
+      @PathVariable Long flowId,
+      @RequestParam(required = false) String description,
+      Authentication authentication,
+      RedirectAttributes redirect) {
+    flowService.describeFlow(flowId, description, authentication.getName());
+    redirect.addFlashAttribute("flash", "Description of the flow saved.");
+    return "redirect:/explore/microdata/" + flowId + "?view=documentation";
+  }
+
+  @PostMapping("/fields/{fieldId}/documentation")
+  public String describeField(
+      @PathVariable Long flowId,
+      @PathVariable Long fieldId,
+      @RequestParam(required = false) String description,
+      @RequestParam(required = false) String attributes,
+      Authentication authentication,
+      RedirectAttributes redirect) {
+    FieldDefinition field;
+    try {
+      field =
+          flowService.describeField(
+              flowId,
+              fieldId,
+              description,
+              FieldAttributes.parseLines(attributes),
+              authentication.getName());
+    } catch (IllegalArgumentException e) {
+      redirect.addFlashAttribute("error", e.getMessage());
+      return "redirect:/explore/microdata/" + flowId + "?view=documentation";
+    }
+    redirect.addFlashAttribute("flash", "Documentation of " + field.fieldCode() + " saved.");
+    return "redirect:/explore/microdata/"
+        + flowId
+        + "?view=documentation#field-"
+        + field.fieldCode();
+  }
+
+  private FieldDoc fieldDoc(FieldDefinition f) {
+    Codelist codelist = f.codelistId() == null ? null : codelistService.findById(f.codelistId());
+    MicrodataFlow target =
+        f.referencedFlowId() == null ? null : flowService.findById(f.referencedFlowId());
+    Map<String, String> attributes = FieldAttributes.fromJson(f.attributes());
+    return new FieldDoc(
+        f,
+        markdown.render(f.description()),
+        f.description() == null ? "" : f.description(),
+        attributes,
+        FieldAttributes.toLines(attributes),
+        codelist,
+        codelist == null
+            ? List.of()
+            : codelist.codes().stream().sorted(Comparator.comparing(Code::code)).toList(),
+        target);
+  }
+
+  /**
+   * Documentation of one field for the documentation tab.
+   *
+   * @param descriptionHtml rendered Markdown definition
+   * @param descriptionSource Markdown for the edit form
+   * @param attributesText attributes as "Key: Value" lines for the edit form
+   */
+  public record FieldDoc(
+      FieldDefinition field,
+      String descriptionHtml,
+      String descriptionSource,
+      Map<String, String> attributes,
+      String attributesText,
+      Codelist codelist,
+      List<Code> codes,
+      MicrodataFlow referencedFlow) {}
+
+  /** First paragraph of a Markdown text (the summary shown in the page header). */
+  static String firstParagraph(String text) {
+    if (text == null || text.isBlank()) {
+      return null;
+    }
+    String trimmed = text.strip();
+    int end = trimmed.indexOf("\n\n");
+    return end < 0 ? trimmed : trimmed.substring(0, end);
+  }
+
+  /** A full stop before a capital letter, but not after abbreviations like "Art." or "z.B.". */
+  private static final Pattern SENTENCE_END =
+      Pattern.compile(
+          "(?<!\\b(?:Art|Abs|Ziff|Nr|Kap|bzw|vgl|ca|Bst|lit|al|bspw|inkl|z\\.B|z\\. B))\\.\\s+(?=[A-ZÄÖÜ])");
+
+  /** First sentence of a Markdown definition as plain text, for tooltips. */
+  static String summary(String description) {
+    String paragraph = firstParagraph(description);
+    if (paragraph == null) {
+      return null;
+    }
+    String plain = paragraph.replaceAll("[*_`#>|]", "").replaceAll("\\s+", " ").strip();
+    Matcher end = SENTENCE_END.matcher(plain);
+    String sentence = end.find() ? plain.substring(0, end.start() + 1) : plain;
+    return sentence.length() > 240 ? sentence.substring(0, 237) + "..." : sentence;
+  }
+
   // --- record page, history and correction (#16) -------------------------------------------------
 
   @GetMapping("/records/{recordId}")
@@ -269,6 +389,7 @@ public class ExploreMicrodataFlowController {
           new FieldRow(
               f.fieldCode(),
               f.label(),
+              summary(f.description()),
               value,
               codeNames(f).get(value),
               referenceLink(f, value, record),
@@ -592,7 +713,7 @@ public class ExploreMicrodataFlowController {
     } catch (IllegalArgumentException e) {
       v = View.records;
     }
-    return !dm && v != View.records ? View.records : v;
+    return !dm && v != View.records && v != View.documentation ? View.records : v;
   }
 
   static MicrodataStage parseStage(String stage, boolean dm) {
@@ -616,6 +737,7 @@ public class ExploreMicrodataFlowController {
   public record FieldRow(
       String code,
       String label,
+      String summary,
       String value,
       String valueName,
       String link,

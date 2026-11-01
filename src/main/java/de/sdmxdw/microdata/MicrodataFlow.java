@@ -18,6 +18,11 @@ public record MicrodataFlow(
     return new MicrodataFlow(null, agencyId, artefactId, version, name, description, null);
   }
 
+  public MicrodataFlow withDescription(String newDescription) {
+    return new MicrodataFlow(
+        id, agencyId, artefactId, version, name, newDescription, linkedDataflowId);
+  }
+
   public MicrodataFlow withLinkedDataflowId(Long newLinkedDataflowId) {
     return new MicrodataFlow(
         id, agencyId, artefactId, version, name, description, newLinkedDataflowId);

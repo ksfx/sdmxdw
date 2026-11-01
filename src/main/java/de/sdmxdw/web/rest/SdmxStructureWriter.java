@@ -138,6 +138,7 @@ final class SdmxStructureWriter {
                   .append(esc(urn.replace(".Codelist=", ".Code=") + "." + c.code()))
                   .append("\">");
               name(c.name());
+              description(c.description());
               xml.append("</str:Code>\n");
             });
     close("Codelist");
@@ -389,6 +390,15 @@ final class SdmxStructureWriter {
     xml.append("<com:Name xml:lang=\"en\">")
         .append(esc(name == null || name.isBlank() ? "-" : name))
         .append("</com:Name>");
+  }
+
+  /** Optional com:Description, which follows com:Name in SDMX-ML. */
+  private void description(String description) {
+    if (description != null && !description.isBlank()) {
+      xml.append("<com:Description xml:lang=\"en\">")
+          .append(esc(description))
+          .append("</com:Description>");
+    }
   }
 
   private void ref(String agency, String id, String ver, String pkg, String cls) {

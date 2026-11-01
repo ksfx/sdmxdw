@@ -19,7 +19,7 @@
             <div>
                 <h1 class="text-xl font-bold" th:text="${flow.agencyId} + ':' + ${flow.artefactId} + '(' + ${flow.version} + ')'"></h1>
                 <p class="text-lg" th:text="${flow.name}"></p>
-                <p class="text-sm opacity-70" th:if="${flow.description}" th:text="${flow.description}"></p>
+                <div class="markdown-body text-sm opacity-80 max-w-4xl" th:if="${descriptionSummaryHtml != ''}" th:utext="${descriptionSummaryHtml}"></div>
                 <div class="mt-2 flex gap-2">
                     <a class="btn btn-xs" th:href="@{/explore/microdata}">Back to overview</a>
                     <a class="btn btn-xs" th:href="${exportUrl}" title="Current filter as SDMX-CSV via the read API">Export CSV</a>
@@ -46,6 +46,7 @@
             </div>
         </div>
         <div th:if="${flash}" class="alert alert-success mt-4 py-2"><span th:text="${flash}"></span></div>
+        <div th:if="${error}" class="alert alert-error mt-4 py-2"><span th:text="${error}"></span></div>
         <div th:if="${alpha and view == 'records'}" class="alert alert-warning mt-4 py-2">
             <span>You are looking at <b>unpublished (Alpha)</b> records. Economists see the published (Beta) records;
                 changes become visible to them only after promotion.</span>
@@ -53,15 +54,16 @@
     </div>
 
     <!-- tabs -->
-    <div role="tablist" class="tabs tabs-boxed bg-base-100 shadow w-fit" th:if="${isDatenmanager}">
+    <div role="tablist" class="tabs tabs-boxed bg-base-100 shadow w-fit">
         <a role="tab" class="tab" th:classappend="${view == 'records'} ? 'tab-active'" th:href="${tabUrls['records']}">Records</a>
-        <a role="tab" class="tab gap-2" th:classappend="${view == 'pending'} ? 'tab-active'" th:href="${tabUrls['pending']}">
+        <a role="tab" class="tab" th:classappend="${view == 'documentation'} ? 'tab-active'" th:href="${tabUrls['documentation']}">Documentation</a>
+        <a th:if="${isDatenmanager}" role="tab" class="tab gap-2" th:classappend="${view == 'pending'} ? 'tab-active'" th:href="${tabUrls['pending']}">
             Pending changes <span class="badge badge-sm" th:classappend="${pendingCount > 0} ? 'badge-warning'" th:text="${pendingCount}"></span></a>
-        <a role="tab" class="tab" th:classappend="${view == 'activity'} ? 'tab-active'" th:href="${tabUrls['activity']}">Activity</a>
+        <a th:if="${isDatenmanager}" role="tab" class="tab" th:classappend="${view == 'activity'} ? 'tab-active'" th:href="${tabUrls['activity']}">Activity</a>
     </div>
 
     <!-- filters -->
-    <div class="card bg-base-100 shadow-xl p-6" th:if="${view != 'activity'}">
+    <div class="card bg-base-100 shadow-xl p-6" th:if="${view == 'records' or view == 'pending'}">
         <form method="get" th:action="@{/explore/microdata/{id}(id=${flow.id})}" class="space-y-3">
             <input type="hidden" name="view" th:value="${view}"/>
             <input type="hidden" name="stage" th:value="${stage}"/>
@@ -161,6 +163,96 @@
         <p th:if="${#lists.isEmpty(auditPage.entries)}" class="opacity-60 mt-2">No activity yet. Corrections, promotions and aggregations are logged here.</p>
         <div th:replace="~{explore/fragments/pager :: pager(${auditPage.page}, ${auditPage.totalPages})}"></div>
     </div>
+
+    <!-- documentation (#23) -->
+    <th:block th:if="${view == 'documentation'}">
+        <div class="card bg-base-100 shadow-xl p-6">
+            <h2 class="font-bold mb-2">About this flow</h2>
+            <div class="markdown-body max-w-4xl" th:if="${descriptionHtml != ''}" th:utext="${descriptionHtml}"></div>
+            <p class="opacity-60" th:if="${descriptionHtml == ''}">No description yet.</p>
+            <details th:if="${isDatenmanager}" class="mt-4">
+                <summary class="cursor-pointer text-sm link">Edit description</summary>
+                <form method="post" th:action="@{/explore/microdata/{id}/documentation(id=${flow.id})}" class="space-y-2 mt-2">
+                    <textarea class="textarea textarea-bordered w-full font-mono text-sm" rows="12" name="description"
+                              th:text="${flow.description}" placeholder="Markdown"></textarea>
+                    <button class="btn btn-primary btn-sm" type="submit">Save description</button>
+                </form>
+            </details>
+        </div>
+
+        <div class="card bg-base-100 shadow-xl p-6">
+            <h2 class="font-bold mb-2">Fields</h2>
+            <p class="text-sm opacity-70 mb-3">
+                <span th:text="${#lists.size(fieldDocs)} + ' field(s).'"></span>
+                Obligation as published by the source: M = mandatory, M* = mandatory with further dependencies, O = optional.
+                Fields of a subtype only apply to entities of that subtype (rule in brackets).
+            </p>
+            <div class="overflow-x-auto">
+                <table class="table table-sm">
+                    <thead><tr><th>Field</th><th>Label</th><th>Type</th><th>Obligation</th><th>Subtype</th></tr></thead>
+                    <tbody>
+                    <tr th:each="d : ${fieldDocs}" th:with="f=${d.field}">
+                        <td><a class="link link-primary font-mono text-sm" th:href="'#field-' + ${f.fieldCode}" th:text="${f.fieldCode}"></a></td>
+                        <td th:text="${f.label}"></td>
+                        <td class="text-sm whitespace-nowrap">
+                            <span th:if="${d.referencedFlow != null}" th:text="'→ ' + ${d.referencedFlow.name}"></span>
+                            <span th:if="${d.referencedFlow == null}" th:text="${d.codelist != null} ? 'code' : ${#strings.toLowerCase(f.dataType)}"></span>
+                            <span th:if="${f.groupCode}" class="badge badge-sm badge-ghost" th:text="${f.groupCode}"></span>
+                        </td>
+                        <td th:text="${f.obligation} ?: '-'"></td>
+                        <td class="text-sm" th:text="${f.subtype} ?: ''"></td>
+                    </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="card bg-base-100 shadow-xl p-6 scroll-mt-4" th:each="d : ${fieldDocs}" th:with="f=${d.field}" th:id="'field-' + ${f.fieldCode}">
+            <div class="flex flex-wrap items-baseline gap-3">
+                <h3 class="font-bold text-lg" th:text="${f.label}"></h3>
+                <code class="text-sm opacity-70" th:text="${f.fieldCode}"></code>
+                <span class="badge badge-sm" th:if="${f.obligation}" th:text="${f.obligation}"
+                      th:title="'Obligation: M = mandatory, M* = mandatory with dependencies, O = optional'"></span>
+                <span class="badge badge-sm badge-outline" th:if="${f.required}" title="Checked when loading">required</span>
+            </div>
+            <p class="text-sm opacity-80 mt-1">
+                <span th:if="${d.referencedFlow != null}">References
+                    <a class="link" th:href="@{/explore/microdata/{id}(id=${d.referencedFlow.id},view='documentation')}" th:text="${d.referencedFlow.name}"></a>.</span>
+                <span th:if="${d.referencedFlow == null and d.codelist == null}" th:text="'Type ' + ${#strings.toLowerCase(f.dataType)} + '.'"></span>
+                <span th:if="${d.codelist != null}" th:text="'Code from ' + ${d.codelist.artefactId} + '.'"></span>
+                <span th:if="${f.groupCode}" th:text="'Repeating group ' + ${f.groupCode} + '.'"></span>
+                <span th:if="${f.subtype}" th:text="'Subtype: ' + ${f.subtype} + (${f.subtypeRule} ? ' (' + ${f.subtypeRule} + ')' : '') + '.'"></span>
+            </p>
+            <div class="markdown-body max-w-4xl mt-3" th:if="${d.descriptionHtml != ''}" th:utext="${d.descriptionHtml}"></div>
+            <table class="table table-xs w-auto mt-3" th:if="${!d.attributes.isEmpty()}">
+                <tbody>
+                <tr th:each="a : ${d.attributes}"><th class="font-normal opacity-70 whitespace-nowrap" th:text="${a.key}"></th><td th:text="${a.value}"></td></tr>
+                </tbody>
+            </table>
+            <details th:if="${d.codelist != null}" class="mt-3">
+                <summary class="cursor-pointer text-sm">
+                    <span th:text="'Codelist ' + ${d.codelist.agencyId} + ':' + ${d.codelist.artefactId} + '(' + ${d.codelist.version} + ') - ' + ${d.codelist.name} + ', ' + ${#lists.size(d.codes)} + ' code(s)'"></span>
+                </summary>
+                <table class="table table-xs mt-2">
+                    <thead><tr><th>Code</th><th>Name</th><th>Description</th></tr></thead>
+                    <tbody>
+                    <tr th:each="c : ${d.codes}"><td class="font-mono" th:text="${c.code}"></td><td th:text="${c.name}"></td>
+                        <td class="text-xs opacity-80" th:text="${c.description} ?: ''"></td></tr>
+                    </tbody>
+                </table>
+            </details>
+            <details th:if="${isDatenmanager}" class="mt-3">
+                <summary class="cursor-pointer text-sm link">Edit documentation</summary>
+                <form method="post" th:action="@{/explore/microdata/{id}/fields/{fid}/documentation(id=${flow.id},fid=${f.id})}" class="space-y-2 mt-2">
+                    <label class="text-xs font-semibold">Definition (Markdown)</label>
+                    <textarea class="textarea textarea-bordered w-full font-mono text-sm" rows="8" name="description" th:text="${d.descriptionSource}"></textarea>
+                    <label class="text-xs font-semibold">Attributes, one "Key: Value" per line</label>
+                    <textarea class="textarea textarea-bordered w-full font-mono text-sm" rows="4" name="attributes" th:text="${d.attributesText}"></textarea>
+                    <button class="btn btn-primary btn-sm" type="submit">Save</button>
+                </form>
+            </details>
+        </div>
+    </th:block>
 </div>
 </body>
 </html>

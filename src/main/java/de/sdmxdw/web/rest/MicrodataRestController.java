@@ -1,5 +1,6 @@
 package de.sdmxdw.web.rest;
 
+import de.sdmxdw.microdata.FieldAttributes;
 import de.sdmxdw.microdata.FieldDataType;
 import de.sdmxdw.microdata.FieldDefinition;
 import de.sdmxdw.microdata.MicrodataCategorisationService;
@@ -410,6 +411,11 @@ public class MicrodataRestController {
     putIfPresent(info, "obligation", f.obligation());
     putIfPresent(info, "subtype", f.subtype());
     putIfPresent(info, "subtypeRule", f.subtypeRule());
+    putIfPresent(info, "description", f.description());
+    Map<String, String> attributes = FieldAttributes.fromJson(f.attributes());
+    if (!attributes.isEmpty()) {
+      info.put("attributes", attributes);
+    }
     if (f.facetSlot() != null) {
       info.put("indexed", true);
     }

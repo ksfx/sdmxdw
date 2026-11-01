@@ -1,5 +1,6 @@
 package de.sdmxdw.structure.category;
 
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -16,8 +17,11 @@ public class CategorySchemeService {
     this.categorySchemeRepository = categorySchemeRepository;
   }
 
+  /** All schemes in creation order (without ORDER BY, PostgreSQL returns updated rows last). */
   public List<CategoryScheme> findAll() {
-    return categorySchemeRepository.findAll();
+    return categorySchemeRepository.findAll().stream()
+        .sorted(Comparator.comparing(CategoryScheme::id))
+        .toList();
   }
 
   public CategoryScheme findById(Long id) {

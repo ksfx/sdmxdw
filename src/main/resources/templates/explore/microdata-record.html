@@ -46,7 +46,9 @@
             <thead><tr><th>Field</th><th>Value</th><th th:if="${canEdit and !unpublished}">Published</th></tr></thead>
             <tbody>
             <tr th:each="row : ${rows}" th:classappend="${row.changed} ? 'bg-warning/10'">
-                <td th:title="${row.code}" th:text="${row.label}"></td>
+                <td><a class="link link-hover" th:text="${row.label}"
+                       th:title="${row.summary != null} ? ${row.code} + ': ' + ${row.summary} : ${row.code}"
+                       th:href="@{/explore/microdata/{id}(id=${flow.id},view='documentation')} + '#field-' + ${row.code}"></a></td>
                 <td>
                     <a th:if="${row.link}" class="link link-primary font-mono" th:href="${row.link}" th:text="${row.value}"></a>
                     <span th:unless="${row.link}" th:text="${row.value}"></span>

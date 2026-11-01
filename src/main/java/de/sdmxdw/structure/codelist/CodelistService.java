@@ -30,9 +30,19 @@ public class CodelistService {
 
   @PreAuthorize("hasRole('DATENMANAGER')")
   public Codelist addCode(Long codelistId, String code, String name) {
+    return addCode(codelistId, code, name, null);
+  }
+
+  /** Adds a code; the description (optional) explains the code beyond its name. */
+  @PreAuthorize("hasRole('DATENMANAGER')")
+  public Codelist addCode(Long codelistId, String code, String name, String description) {
     Codelist codelist = findById(codelistId);
     Set<Code> codes = new HashSet<>(codelist.codes());
-    codes.add(new Code(null, code, name));
+    codes.add(new Code(null, code, name, blankToNull(description)));
     return codelistRepository.save(codelist.withCodes(codes));
+  }
+
+  private static String blankToNull(String s) {
+    return s == null || s.isBlank() ? null : s.strip();
   }
 }

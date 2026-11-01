@@ -1,6 +1,9 @@
 package de.sdmxdw.web.structure;
 
+import de.sdmxdw.structure.codelist.Code;
+import de.sdmxdw.structure.codelist.Codelist;
 import de.sdmxdw.structure.codelist.CodelistService;
+import java.util.Comparator;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -37,14 +40,20 @@ public class CodelistController {
 
   @GetMapping("/{id}")
   public String detail(@PathVariable Long id, Model model) {
-    model.addAttribute("codelist", codelistService.findById(id));
+    Codelist codelist = codelistService.findById(id);
+    model.addAttribute("codelist", codelist);
+    model.addAttribute(
+        "codes", codelist.codes().stream().sorted(Comparator.comparing(Code::code)).toList());
     return "structure/codelist-detail";
   }
 
   @PostMapping("/{id}/codes")
   public String addCode(
-      @PathVariable Long id, @RequestParam String code, @RequestParam String name) {
-    codelistService.addCode(id, code, name);
+      @PathVariable Long id,
+      @RequestParam String code,
+      @RequestParam String name,
+      @RequestParam(required = false) String description) {
+    codelistService.addCode(id, code, name, description);
     return "redirect:/structures/codelists/" + id;
   }
 }

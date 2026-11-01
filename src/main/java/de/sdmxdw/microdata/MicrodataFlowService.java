@@ -1,8 +1,11 @@
 package de.sdmxdw.microdata;
 
+import de.sdmxdw.data.audit.AuditLogService;
 import de.sdmxdw.structure.codelist.CodelistRepository;
 import de.sdmxdw.structure.dataflow.DataflowRepository;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
@@ -14,20 +17,26 @@ public class MicrodataFlowService {
   private final FieldDefinitionRepository fieldDefinitionRepository;
   private final CodelistRepository codelistRepository;
   private final DataflowRepository dataflowRepository;
+  private final AuditLogService auditLogService;
 
   public MicrodataFlowService(
       MicrodataFlowRepository microdataFlowRepository,
       FieldDefinitionRepository fieldDefinitionRepository,
       CodelistRepository codelistRepository,
-      DataflowRepository dataflowRepository) {
+      DataflowRepository dataflowRepository,
+      AuditLogService auditLogService) {
     this.microdataFlowRepository = microdataFlowRepository;
     this.fieldDefinitionRepository = fieldDefinitionRepository;
     this.codelistRepository = codelistRepository;
     this.dataflowRepository = dataflowRepository;
+    this.auditLogService = auditLogService;
   }
 
+  /** All flows in creation order (without ORDER BY, PostgreSQL returns updated rows last). */
   public List<MicrodataFlow> findAll() {
-    return microdataFlowRepository.findAll();
+    return microdataFlowRepository.findAll().stream()
+        .sorted(Comparator.comparing(MicrodataFlow::id))
+        .toList();
   }
 
   public MicrodataFlow findById(Long id) {
@@ -154,6 +163,43 @@ public class MicrodataFlowService {
     return fieldDefinitionRepository.save(
         field.withDocumentation(
             normalizedObligation, blankToNull(subtype), blankToNull(subtypeRule)));
+  }
+
+  /** Sets the description of the flow (Markdown, shown in the explorer); blank clears it. */
+  @PreAuthorize("hasRole('DATENMANAGER')")
+  public MicrodataFlow describeFlow(Long microdataFlowId, String description, String user) {
+    MicrodataFlow saved =
+        microdataFlowRepository.save(
+            findById(microdataFlowId).withDescription(blankToNull(description)));
+    auditLogService.recordMicrodata(
+        microdataFlowId, "DOCUMENTATION", user, "Description of the flow updated");
+    return saved;
+  }
+
+  /**
+   * Sets the documentation of a field: its definition (Markdown) and further source attributes such
+   * as the field id or technical name in the source model (#23).
+   */
+  @PreAuthorize("hasRole('DATENMANAGER')")
+  public FieldDefinition describeField(
+      Long microdataFlowId,
+      Long fieldId,
+      String description,
+      Map<String, String> attributes,
+      String user) {
+    FieldDefinition field = fieldDefinitionRepository.findById(fieldId).orElseThrow();
+    if (!field.microdataFlowId().equals(microdataFlowId)) {
+      throw new IllegalArgumentException("Field " + fieldId + " belongs to another flow");
+    }
+    FieldDefinition saved =
+        fieldDefinitionRepository.save(
+            field.withDescription(blankToNull(description), FieldAttributes.toJson(attributes)));
+    auditLogService.recordMicrodata(
+        microdataFlowId,
+        "DOCUMENTATION",
+        user,
+        "Documentation of field " + field.fieldCode() + " updated");
+    return saved;
   }
 
   private static String blankToNull(String value) {
