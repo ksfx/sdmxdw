@@ -34,9 +34,9 @@ build/
 
 ### SDMxDW runtime data (never commit) ###
 # secret key of the process secrets, run folders, Git working copy of the process folder
-data/
+/data/
 # process folder: runtime content, linked to its own repository via Processes -> Git (#20)
-processes/
+/processes/
 # Python environment of the plugins / processes
 plugins/.venv/
 __pycache__/
