@@ -91,7 +91,7 @@
             <div>
                 <h2 class="text-lg font-bold" id="relations-title"></h2>
                 <p class="text-xs opacity-60">
-                    Click an entity to show its attributes and details with links to the documentation,
+                    Click an entity to show its attributes and details with links to the documentation (click again to close),
                     drag to rearrange, scroll to zoom, double-click to open its records. Arrows point from
                     the referencing field to the referenced entity. M = mandatory, M* = mandatory with
                     dependencies, ▸ = subtype.
@@ -229,13 +229,32 @@
         }, 50);
     }
 
-    function toggleAttributes(nodeId) {
-        expandedNodes.has(nodeId) ? expandedNodes.delete(nodeId) : expandedNodes.add(nodeId);
+    // centre the opened entity without zooming in, so the other entities stay reachable
+    function focusEntity(nodeId) {
+        setTimeout(() => relationsNetwork.focus(nodeId, {animation: true}), 120);
+    }
+
+    // one entity open at a time (unless "All attributes" is on): opens nodeId, closes the others
+    function openEntity(nodeId) {
+        const allOn = document.getElementById('relations-all-attributes').checked;
+        const changed = [];
+        if (!allOn) {
+            expandedNodes.forEach(id => { if (id !== nodeId) changed.push(id); });
+            expandedNodes.clear();
+        }
+        expandedNodes.add(nodeId);
+        changed.push(nodeId);
+        relationsNodes.update(changed.map(id => nodeView(relationsGraph.nodes.find(n => n.id === id))));
+        relayout(false);
+        focusEntity(nodeId);
+        showPanel(nodeId);
+    }
+
+    function closeEntity(nodeId) {
+        expandedNodes.delete(nodeId);
         relationsNodes.update(nodeView(relationsGraph.nodes.find(n => n.id === nodeId)));
         relayout(false);
-        if (expandedNodes.has(nodeId)) {
-            setTimeout(() => relationsNetwork.focus(nodeId, {animation: true}), 120);
-        }
+        hidePanel();
     }
 
     // detail panel of the selected entity: summary, links to records and documentation, and every
@@ -256,9 +275,7 @@
 
     function selectEntity(nodeId) {
         relationsNetwork.selectNodes([nodeId]);
-        if (!expandedNodes.has(nodeId)) toggleAttributes(nodeId);
-        else relationsNetwork.focus(nodeId, {animation: true});
-        showPanel(nodeId);
+        openEntity(nodeId);
     }
 
     function hidePanel() {
@@ -270,6 +287,8 @@
         const panel = document.getElementById('relations-panel');
         panel.replaceChildren();
         panel.classList.remove('hidden');
+        panel.scrollTop = 0;
+        panel.dataset.nodeId = nodeId;
         const docUrl = '/explore/microdata/' + node.id + '?view=documentation';
 
         const head = el('div', 'flex items-start justify-between gap-2');
@@ -331,6 +350,9 @@
     function setAllAttributes(show) {
         expandedNodes.clear();
         if (show) relationsGraph.nodes.forEach(n => expandedNodes.add(n.id));
+        // switched off: the entity shown in the detail panel stays open
+        const panel = document.getElementById('relations-panel');
+        if (!show && !panel.classList.contains('hidden')) expandedNodes.add(Number(panel.dataset.nodeId));
         relationsNodes.update(relationsGraph.nodes.map(nodeView));
         relayout(true);
     }
@@ -384,6 +406,8 @@
         if (relationsNetwork) relationsNetwork.destroy();
         relationsNetwork = new vis.Network(document.getElementById('relations-canvas'), {nodes, edges}, {
             interaction: {hover: true, tooltipDelay: 300, keyboard: false},
+            // draw labels even when zoomed out (default threshold 5 px left opened entities blank)
+            nodes: {scaling: {label: {drawThreshold: 0}}},
             physics: {
                 solver: 'forceAtlas2Based',
                 forceAtlas2Based: {gravitationalConstant: -90, springLength: 110, avoidOverlap: 0.9},
@@ -401,10 +425,10 @@
             if (!params.nodes.length) return;
             clearTimeout(clickTimer);
             const nodeId = params.nodes[0];
-            clickTimer = setTimeout(() => {
-                toggleAttributes(nodeId);
-                expandedNodes.has(nodeId) ? showPanel(nodeId) : hidePanel();
-            }, 250);
+            const panel = document.getElementById('relations-panel');
+            const showing = !panel.classList.contains('hidden') && panel.dataset.nodeId === String(nodeId);
+            // a second click on the open entity closes it, any other entity replaces it
+            clickTimer = setTimeout(() => showing && expandedNodes.has(nodeId) ? closeEntity(nodeId) : openEntity(nodeId), 250);
         });
         relationsNetwork.on('doubleClick', params => {
             clearTimeout(clickTimer);
