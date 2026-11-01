@@ -5,16 +5,15 @@ A step is a plain script started by SDMxDW. It never talks to the database:
 * Writing: deliveries are written as SDMX-CSV files into the step's output folder
   (SDMXDW_OUT_DIR). SDMxDW validates and loads them into the Alpha stage right after the
   step - all files of a step together, all or nothing. The STRUCTURE_ID column names the target
-  flow, e.g. "SNB:DF_KRED(3.0.0)" or a microdata flow "SNB:MDF_EKE_INSTRUMENT(5.0.0)".
+  flow, e.g. "DEMO:DF_LOANS(1.0.0)" or a microdata flow "DEMO:MDF_LOANS(1.0.0)".
 * Reading: read_data() / read_microdata() use the read API with the run's own short-lived
   credential (SDMXDW_API_TOKEN) - nothing to configure.
 * Parameters: param("period"); secrets are plain environment variables (os.environ["NAME"]).
 
 Example:
     from sdmxdw_sdk import IngestClient, param
-    IngestClient("BIS:DF_CREDIT_GAP(1.0.0)").send([
-        {"dimensions": {"FREQ": "Q", "BORROWERS_CTY": "CH", "TC_BORROWERS": "P", "TC_LENDERS": "A",
-                        "CG_DTYPE": "A", "TIME_PERIOD": "2026-Q2"},
+    IngestClient("DEMO:DF_LOANS(1.0.0)").send([
+        {"dimensions": {"FREQ": "Q", "BANK": "B01", "SECTOR": "HH", "TIME_PERIOD": "2026-Q2"},
          "measures": {"OBS_VALUE": "1.5"}},
     ])
 """
@@ -65,7 +64,7 @@ def dry_run():
 def base_arg_parser(description):
     """Common arguments of import scripts: --flow (target flow reference)."""
     parser = argparse.ArgumentParser(description=description)
-    parser.add_argument("--flow", required=True, help='target flow, e.g. "SNB:DF_KRED(3.0.0)"')
+    parser.add_argument("--flow", required=True, help='target flow, e.g. "DEMO:DF_LOANS(1.0.0)"')
     parser.add_argument("--dry-run", action="store_true", help="print only, write nothing")
     return parser
 
@@ -116,7 +115,7 @@ class IngestClient:
 
     def __init__(self, flow, *legacy, dry_run=False, **_):
         if legacy:  # old signature IngestClient(ingest_url, dataflow_id)
-            raise ValueError('IngestClient now takes the flow reference, e.g. IngestClient("SNB:DF_KRED(3.0.0)")')
+            raise ValueError('IngestClient now takes the flow reference, e.g. IngestClient("DEMO:DF_LOANS(1.0.0)")')
         self.flow = _check_flow(flow)
         self.dry_run = dry_run
 

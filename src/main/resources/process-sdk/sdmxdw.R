@@ -10,9 +10,9 @@
 # Use it with:  source(file.path(Sys.getenv("SDMXDW_SHARED_DIR"), "sdmxdw.R"))
 #
 # Example:
-#   df <- sdmxdw_read("SNB:DF_KRED(3.0.0)", key = "Q.DEMO01._T..26", startPeriod = "2025-Q1")
+#   df <- sdmxdw_read("DEMO:DF_LOANS(1.0.0)", key = "Q.B01..", startPeriod = "2025-Q1")
 #   result <- data.frame(FREQ = "Q", ..., TIME_PERIOD = "2026-Q2", OBS_VALUE = 1.5)
-#   sdmxdw_write("SNB:DF_RESULT(1.0.0)", result)
+#   sdmxdw_write("DEMO:DF_RESULT(1.0.0)", result)
 
 sdmxdw_param <- function(name, default = NULL) {
   value <- Sys.getenv(paste0("SDMXDW_PARAM_", toupper(name)), unset = "")

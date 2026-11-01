@@ -9,7 +9,7 @@ process folder; built-in steps aggregate microdata, promote Alpha to Beta or run
 |---|---|
 | Working directory | `SDMXDW_WORK_DIR`, shared by all steps of the run (intermediate files) |
 | Deliveries | SDMX-CSV or Parquet files in `SDMXDW_OUT_DIR`; loaded into **Alpha** right after the step, all files together, all or nothing |
-| Target flow | column `STRUCTURE_ID`, e.g. `SNB:DF_KRED(3.0.0)`; microdata group rows `SNB:MDF_X(1.0.0)/GROUP` with `ENTITY_ID`, `REPORTING_PERIOD`, `ITEM_NO` |
+| Target flow | column `STRUCTURE_ID`, e.g. `DEMO:DF_LOANS(1.0.0)`; microdata group rows `DEMO:MDF_LOANS(1.0.0)/COLLATERAL` with `ENTITY_ID`, `REPORTING_PERIOD`, `ITEM_NO` |
 | Parameters | `SDMXDW_PARAM_<NAME>`, `${name}` in the step arguments |
 | Secrets | environment variables with their own name (selected in the process settings) |
 | Reading data | read API at `SDMXDW_API_URL` with the run's credential `SDMXDW_API_TOKEN` (read only) |
@@ -24,16 +24,16 @@ The process folder and `shared/` are on the Python path; R files of the process 
 ```python
 from sdmxdw_sdk import IngestClient, MicrodataClient, read_data, read_microdata, param, write_table
 
-IngestClient("SNB:DF_KRED(3.0.0)").send([
-    {"dimensions": {"FREQ": "Q", "MELDEINSTITUT": "DEMO01", ..., "TIME_PERIOD": "2026-Q3"},
+IngestClient("DEMO:DF_LOANS(1.0.0)").send([
+    {"dimensions": {"FREQ": "Q", "BANK": "B01", ..., "TIME_PERIOD": "2026-Q3"},
      "measures": {"OBS_VALUE": "123"}},
 ])
-MicrodataClient("SNB:MDF_EKE_INSTRUMENT(5.0.0)").send([
+MicrodataClient("DEMO:MDF_LOANS(1.0.0)").send([
     {"entityId": "I-1", "reportingPeriod": "2026-Q3", "fields": {...}, "groups": {"COLLATERAL": [{...}]}},
 ])
-write_table("SNB:DF_KRED(3.0.0)", pandas_dataframe)   # columns = concept codes
-rows = read_data("SNB:DF_KRED(3.0.0)", key="Q.DEMO01._T..26", startPeriod="2025-Q1")
-loans = read_microdata("SNB:MDF_EKE_INSTRUMENT(5.0.0)", reportingPeriod="latest", c={"WAEHRUNG_INSTRUMENT": "CHF"})
+write_table("DEMO:DF_LOANS(1.0.0)", pandas_dataframe)   # columns = concept codes
+rows = read_data("DEMO:DF_LOANS(1.0.0)", key="Q.B01..", startPeriod="2025-Q1")
+loans = read_microdata("DEMO:MDF_LOANS(1.0.0)", reportingPeriod="latest", c={"CURRENCY": "CHF"})
 period = param("period", "latest")
 ```
 
@@ -41,9 +41,9 @@ period = param("period", "latest")
 
 ```r
 source(file.path(Sys.getenv("SDMXDW_SHARED_DIR"), "sdmxdw.R"))
-kred <- sdmxdw_read("SNB:DF_KRED(3.0.0)", key = "Q.DEMO01._T..26", startPeriod = "2025-Q1")
+loans <- sdmxdw_read("DEMO:DF_LOANS(1.0.0)", key = "Q.B01..", startPeriod = "2025-Q1")
 result <- data.frame(FREQ = "Q", ..., TIME_PERIOD = "2026-Q3", OBS_VALUE = 1.5)
-sdmxdw_write("SNB:DF_RESULT(1.0.0)", result)
+sdmxdw_write("DEMO:DF_RESULT(1.0.0)", result)
 period <- sdmxdw_param("period", "latest")
 ```
 

@@ -114,8 +114,8 @@ sdmx.add_source({"id": "SDMXDW", "name": "SDMxDW", "url": "https://<host>/rest"}
 client = sdmx.Client("SDMXDW")
 client.session.headers["Authorization"] = f"Bearer {os.environ['SDMXDW_TOKEN']}"
 
-dsd = client.dataflow("DF_KRED", agency_id="SNB").dataflow["DF_KRED"].structure
-df = sdmx.to_pandas(client.data("DF_KRED", key="Q.DEMO01._T.39.26", dsd=dsd))
+dsd = client.dataflow("DF_LOANS", agency_id="DEMO").dataflow["DF_LOANS"].structure
+df = sdmx.to_pandas(client.data("DF_LOANS", key="Q.B01..", dsd=dsd))
 ```
 
 ### 👥 Roles
@@ -151,7 +151,9 @@ export SDMXDW_DB_PASSWORD=... SDMXDW_ADMIN_PASSWORD=...
 java -jar target/sdmxdw-0.0.1-SNAPSHOT.jar
 ```
 
-Open http://localhost:8080 and log in as `admin@sdmxdw.local` with `SDMXDW_ADMIN_PASSWORD`. If it
+Open http://localhost:8080 and log in as `admin@sdmxdw.local` with `SDMXDW_ADMIN_PASSWORD`.
+To try it out, start once with `SDMXDW_DEMO_DATA=true`: it creates fictional demo data under the
+agency `DEMO` (loans by region and sector as time series, a small documented loan register). If it
 is not set, a random password is generated and printed to the log once. You must change it at the
 first login. All settings are environment variables, see `ops/sdmxdw.env.example`;
 `ops/sdmxdw.service` is a systemd unit, `ops/backup-postgres.sh` a backup job.
@@ -167,7 +169,6 @@ decrypted; with it and a dump, anyone can.
 ./mvnw verify              # tests; need a PostgreSQL database sdmxdw_test (SDMXDW_TEST_DB_*)
 ```
 
-* `ops/seed/` contains the scripts that build the demo structures (EKE v5, AnaCredit, KRED).
 * `ops/codemirror/` contains the recipe for the bundled editor.
 * Documentation of the read API is in the app under **API**; how to write process steps is in
   `shared/README.md` of the process folder.
