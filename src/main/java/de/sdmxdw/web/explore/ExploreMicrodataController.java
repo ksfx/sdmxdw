@@ -237,7 +237,7 @@ public class ExploreMicrodataController {
   @GetMapping("/{flowId}/records/{recordId}/panel")
   public String panel(@PathVariable Long flowId, @PathVariable Long recordId, Model model) {
     MicrodataFlow flow = microdataFlowService.findById(flowId);
-    MicrodataRecord record = microdataRecordService.findById(recordId);
+    MicrodataRecord record = microdataRecordService.findById(flowId, recordId);
     List<FieldDefinition> fields = microdataFlowService.findFields(flowId);
     MicrodataPayload payload = microdataRecordService.parsePayload(record.payloadJson());
 

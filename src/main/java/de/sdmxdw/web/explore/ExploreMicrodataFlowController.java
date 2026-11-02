@@ -491,7 +491,7 @@ public class ExploreMicrodataFlowController {
   // --- helpers ---------------------------------------------------------------------------------
 
   private MicrodataRecord loadRecord(Long flowId, Long recordId) {
-    MicrodataRecord record = recordService.findById(recordId);
+    MicrodataRecord record = recordService.findById(flowId, recordId);
     if (!record.microdataFlowId().equals(flowId)) {
       throw new IllegalArgumentException("Record " + recordId + " is not part of flow " + flowId);
     }

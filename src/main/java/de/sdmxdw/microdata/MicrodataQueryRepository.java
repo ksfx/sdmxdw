@@ -92,34 +92,18 @@ public class MicrodataQueryRepository {
     return cached[0] <= TEXT_SEARCH_VALUES_LIMIT;
   }
 
-  /** Reporting periods of a flow, read with a loose index scan: one index probe per period. */
+  /** Reporting periods of a flow with current records of the stage: one probe per partition. */
   public List<String> reportingPeriods(Long flowId, String stage) {
     return jdbc.queryForList(
-        "WITH RECURSIVE p AS ("
-            + " (SELECT reporting_period FROM microdata_record WHERE stage = :stage"
-            + " AND microdata_flow_id = :flowId AND valid_to IS NULL"
-            + " ORDER BY reporting_period LIMIT 1)"
-            + " UNION ALL SELECT (SELECT r.reporting_period FROM microdata_record r"
-            + " WHERE r.stage = :stage AND r.microdata_flow_id = :flowId AND r.valid_to IS NULL"
-            + " AND r.reporting_period > p.reporting_period ORDER BY r.reporting_period LIMIT 1)"
-            + " FROM p WHERE p.reporting_period IS NOT NULL)"
-            + " SELECT reporting_period FROM p WHERE reporting_period IS NOT NULL",
+        "SELECT p FROM microdata_periods(:flowId, :stage) p ORDER BY p",
         new MapSqlParameterSource("flowId", flowId).addValue("stage", stage),
         String.class);
   }
 
-  /** Reporting periods of all flows, newest first; a loose index scan over flows and periods. */
+  /** Reporting periods of all flows, newest first. */
   public List<String> reportingPeriods(String stage) {
     return jdbc.queryForList(
-        "WITH RECURSIVE p AS ("
-            + " (SELECT microdata_flow_id AS f, reporting_period AS rp FROM microdata_record"
-            + " WHERE stage = :stage AND valid_to IS NULL"
-            + " ORDER BY microdata_flow_id, reporting_period LIMIT 1)"
-            + " UNION ALL SELECT n.f, n.rp FROM p, LATERAL (SELECT r.microdata_flow_id AS f,"
-            + " r.reporting_period AS rp FROM microdata_record r WHERE r.stage = :stage"
-            + " AND r.valid_to IS NULL AND (r.microdata_flow_id, r.reporting_period) > (p.f, p.rp)"
-            + " ORDER BY r.microdata_flow_id, r.reporting_period LIMIT 1) n)"
-            + " SELECT DISTINCT rp FROM p ORDER BY rp DESC",
+        "SELECT DISTINCT p FROM microdata_periods(NULL, :stage) p ORDER BY p DESC",
         new MapSqlParameterSource("stage", stage),
         String.class);
   }

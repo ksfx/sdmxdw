@@ -57,6 +57,9 @@ public interface MicrodataRecordRepository extends ListCrudRepository<MicrodataR
       @Param("facet4") String facet4,
       @Param("q") String q);
 
+  @Query("SELECT * FROM microdata_record WHERE id = :id AND microdata_flow_id = :flowId")
+  Optional<MicrodataRecord> findByIdInFlow(@Param("id") Long id, @Param("flowId") Long flowId);
+
   @Query(
       "SELECT * FROM microdata_record WHERE microdata_flow_id = :flowId AND entity_id = :entityId"
           + " AND reporting_period = :reportingPeriod AND stage = :stage ORDER BY valid_from")

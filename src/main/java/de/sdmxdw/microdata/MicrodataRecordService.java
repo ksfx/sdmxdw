@@ -38,6 +38,7 @@ public class MicrodataRecordService {
   private final ObjectMapper objectMapper;
   private final MicrodataQueryRepository microdataQueryRepository;
   private final AuditLogService auditLogService;
+  private final MicrodataPartitions partitions;
 
   public MicrodataRecordService(
       MicrodataRecordRepository microdataRecordRepository,
@@ -48,7 +49,8 @@ public class MicrodataRecordService {
       ObservationService observationService,
       ObjectMapper objectMapper,
       MicrodataQueryRepository microdataQueryRepository,
-      AuditLogService auditLogService) {
+      AuditLogService auditLogService,
+      MicrodataPartitions partitions) {
     this.microdataRecordRepository = microdataRecordRepository;
     this.microdataFlowService = microdataFlowService;
     this.codelistService = codelistService;
@@ -58,11 +60,13 @@ public class MicrodataRecordService {
     this.objectMapper = objectMapper;
     this.microdataQueryRepository = microdataQueryRepository;
     this.auditLogService = auditLogService;
+    this.partitions = partitions;
   }
 
+  /** A record by id; the flow selects its partitions (V24). */
   @PostAuthorize("returnObject.stage().name() == 'BETA' or hasRole('DATENMANAGER')")
-  public MicrodataRecord findById(Long recordId) {
-    return microdataRecordRepository.findById(recordId).orElseThrow();
+  public MicrodataRecord findById(Long flowId, Long recordId) {
+    return microdataRecordRepository.findByIdInFlow(recordId, flowId).orElseThrow();
   }
 
   @PreAuthorize("hasRole('DATENMANAGER')")
@@ -187,6 +191,8 @@ public class MicrodataRecordService {
       Map<String, List<Map<String, String>>> groupValuesByGroupCode,
       String recordedBy,
       String comment) {
+    // before anything reads the records: a new partition locks the table briefly (V24)
+    partitions.ensure(flowId, reportingPeriod);
     List<FieldDefinition> fields = microdataFlowService.findFields(flowId);
     Map<FacetSlot, String> facetValues = new LinkedHashMap<>();
     Map<String, String> scalars = new LinkedHashMap<>();

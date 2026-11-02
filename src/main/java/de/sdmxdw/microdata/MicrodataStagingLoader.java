@@ -57,19 +57,22 @@ public class MicrodataStagingLoader {
   private final ObjectMapper objectMapper;
   private final JdbcTemplate jdbc;
   private final NamedParameterJdbcTemplate named;
+  private final MicrodataPartitions partitions;
 
   public MicrodataStagingLoader(
       MicrodataFlowService flowService,
       CodelistService codelistService,
       AuditLogService auditLogService,
       ObjectMapper objectMapper,
-      JdbcTemplate jdbc) {
+      JdbcTemplate jdbc,
+      MicrodataPartitions partitions) {
     this.flowService = flowService;
     this.codelistService = codelistService;
     this.auditLogService = auditLogService;
     this.objectMapper = objectMapper;
     this.jdbc = jdbc;
     this.named = new NamedParameterJdbcTemplate(jdbc);
+    this.partitions = partitions;
   }
 
   /** Result per flow, in the order the flows first appeared in the delivery. */
@@ -342,6 +345,14 @@ public class MicrodataStagingLoader {
       if (full()) {
         return List.of();
       }
+      // partitions of new periods, before this transaction reads microdata_record (V24)
+      List<MicrodataPartitions.Key> keys = new ArrayList<>();
+      jdbc.query(
+          "SELECT DISTINCT flow_id, period FROM md_load",
+          rs -> {
+            keys.add(new MicrodataPartitions.Key(rs.getLong(1), rs.getString(2)));
+          });
+      partitions.ensure(keys);
       jdbc.execute("CREATE INDEX ON md_load (flow_id, entity_id, period)");
       jdbc.execute("CREATE INDEX ON md_load_group (flow_id, entity_id, period, group_code)");
       jdbc.execute("ANALYZE md_load");
