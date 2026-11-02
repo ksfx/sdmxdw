@@ -219,6 +219,13 @@ class ProcessLoaderTest extends AbstractIntegrationTest {
     // assembled in SQL, but byte for byte the JSON the services write (text comparisons, #17)
     assertThat(l1.payloadJson())
         .isEqualTo(objectMapper.writeValueAsString(recordService.parsePayload(l1.payloadJson())));
+    // the bulk load maintains the pending changes itself (V25): both loans await promotion
+    assertThat(recordService.countPendingChanges(m.loans().id())).isEqualTo(2);
+    var reload = loader.load(out, false, "process:test#2");
+    assertThat(reload.targets()).extracting(ProcessLoader.TargetReport::unchanged).contains(2);
+    assertThat(recordService.countPendingChanges(m.loans().id())).isEqualTo(2);
+    recordService.promoteToBeta(m.loans().id(), "dm");
+    assertThat(recordService.countPendingChanges(m.loans().id())).isZero();
     var l2 =
         recordService
             .findCurrentOne(m.loans().id(), "L-2", "2026-Q3", MicrodataStage.ALPHA)

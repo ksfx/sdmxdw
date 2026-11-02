@@ -248,7 +248,9 @@ public class MicrodataQueryRepository {
         "SELECT a.*, b.payload_json AS beta_payload FROM microdata_record a JOIN ("
             + pendingKeys(query, facetByField, params)
             + " ORDER BY p.reporting_period, p.entity_id LIMIT :limit OFFSET :offset) page"
-            + " ON page.record_id = a.id"
+            // flow and period select the partition of each record (V24)
+            + " ON page.record_id = a.id AND a.microdata_flow_id = :flowId"
+            + " AND a.reporting_period = page.reporting_period"
             + " LEFT JOIN microdata_record b ON b.microdata_flow_id = a.microdata_flow_id"
             + " AND b.entity_id = a.entity_id AND b.reporting_period = a.reporting_period"
             + " AND b.stage = 'BETA' AND b.valid_to IS NULL"

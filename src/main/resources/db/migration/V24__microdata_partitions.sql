@@ -120,3 +120,6 @@ CREATE TRIGGER microdata_pending_insert AFTER INSERT ON microdata_record
 CREATE TRIGGER microdata_pending_update AFTER UPDATE ON microdata_record
     REFERENCING NEW TABLE AS new_rows
     FOR EACH STATEMENT EXECUTE FUNCTION microdata_pending_after_update();
+
+-- partitioned tables are never analysed by autovacuum; the planner needs their statistics
+ANALYZE microdata_record;

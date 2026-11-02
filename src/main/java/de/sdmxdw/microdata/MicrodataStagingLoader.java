@@ -463,41 +463,76 @@ public class MicrodataStagingLoader {
                 + " || '}}' FROM md_load l WHERE flow_id = :flow",
             new MapSqlParameterSource("flow", info.flow.id()));
       }
-      jdbc.execute("CREATE INDEX ON md_load_final (flow_id, entity_id, period)");
+      jdbc.execute("CREATE INDEX ON md_load_final (flow_id, period, entity_id)");
       jdbc.execute("ANALYZE md_load_final");
 
       MapSqlParameterSource p =
           new MapSqlParameterSource("now", Timestamp.from(Instant.now()))
               .addValue("by", recordedBy);
-      String join =
-          " m.microdata_flow_id = st.flow_id AND m.entity_id = st.entity_id"
-              + " AND m.reporting_period = st.period AND m.stage = 'ALPHA' AND m.valid_to IS NULL";
       Map<Long, Integer> rows = counts("SELECT flow_id, count(*) FROM md_load_final GROUP BY 1");
-      Map<Long, Integer> unchanged =
-          counts(
-              "SELECT st.flow_id, count(*) FROM md_load_final st JOIN microdata_record m ON"
-                  + join
-                  + " WHERE m.payload_json = st.payload GROUP BY 1");
-      named.update(
-          "UPDATE microdata_record m SET valid_to = :now FROM md_load_final st WHERE"
-              + join
-              + " AND m.payload_json <> st.payload",
-          p);
+      Map<Long, Integer> unchanged = new HashMap<>();
       Map<Long, Integer> written = new HashMap<>();
-      named.query(
-          "WITH ins AS (INSERT INTO microdata_record (microdata_flow_id, entity_id,"
-              + " reporting_period, stage, facet1_value, facet2_value, facet3_value, facet4_value,"
-              + " payload_json, valid_from, recorded_by)"
-              + " SELECT st.flow_id, st.entity_id, st.period, 'ALPHA', st.f1, st.f2, st.f3, st.f4,"
-              + " st.payload, :now, :by FROM md_load_final st"
-              + " WHERE NOT EXISTS (SELECT 1 FROM microdata_record m WHERE"
-              + join
-              + ") RETURNING microdata_flow_id)"
-              + " SELECT microdata_flow_id, count(*) FROM ins GROUP BY 1",
-          p,
+      // microdata_pending is maintained here, in the same statements (see V19)
+      jdbc.execute("SET LOCAL sdmxdw.bulk_load = 'on'");
+      List<MicrodataPartitions.Key> keys = new ArrayList<>();
+      jdbc.query(
+          "SELECT DISTINCT flow_id, period FROM md_load_final",
           rs -> {
-            written.put(rs.getLong(1), rs.getInt(2));
+            keys.add(new MicrodataPartitions.Key(rs.getLong(1), rs.getString(2)));
           });
+      // one flow and period at a time: constants let every statement touch only that partition
+      for (MicrodataPartitions.Key key : keys) {
+        MapSqlParameterSource k =
+            new MapSqlParameterSource(p.getValues())
+                .addValue("flow", key.flowId())
+                .addValue("period", key.reportingPeriod());
+        String staged = " FROM md_load_final st WHERE st.flow_id = :flow AND st.period = :period";
+        String current =
+            " m.microdata_flow_id = :flow AND m.reporting_period = :period"
+                + " AND m.entity_id = st.entity_id AND m.stage = 'ALPHA' AND m.valid_to IS NULL";
+        Integer same =
+            named.queryForObject(
+                "SELECT count(*)"
+                    + staged
+                    + " AND EXISTS (SELECT 1 FROM microdata_record m WHERE"
+                    + current
+                    + " AND m.payload_json = st.payload)",
+                k,
+                Integer.class);
+        unchanged.merge(key.flowId(), same == null ? 0 : same, Integer::sum);
+        // changed records: close the current vintage, which is no longer pending
+        named.update(
+            "WITH closed AS (UPDATE microdata_record m SET valid_to = :now"
+                + " FROM md_load_final st WHERE st.flow_id = :flow AND st.period = :period AND"
+                + current
+                + " AND m.payload_json <> st.payload RETURNING m.id)"
+                + " DELETE FROM microdata_pending WHERE record_id IN (SELECT id FROM closed)",
+            k);
+        // new vintages; pending unless Beta holds the same payload
+        Integer inserted =
+            named.queryForObject(
+                "WITH ins AS (INSERT INTO microdata_record (microdata_flow_id, entity_id,"
+                    + " reporting_period, stage, facet1_value, facet2_value, facet3_value,"
+                    + " facet4_value, payload_json, valid_from, recorded_by)"
+                    + " SELECT :flow, st.entity_id, :period, 'ALPHA', st.f1, st.f2, st.f3, st.f4,"
+                    + " st.payload, :now, :by"
+                    + staged
+                    + " AND NOT EXISTS (SELECT 1 FROM microdata_record m WHERE"
+                    + current
+                    + ") RETURNING id, entity_id, payload_json),"
+                    + " pending AS (INSERT INTO microdata_pending"
+                    + " (record_id, microdata_flow_id, reporting_period, entity_id)"
+                    + " SELECT ins.id, :flow, :period, ins.entity_id FROM ins"
+                    + " WHERE NOT EXISTS (SELECT 1 FROM microdata_record b"
+                    + " WHERE b.microdata_flow_id = :flow AND b.reporting_period = :period"
+                    + " AND b.entity_id = ins.entity_id AND b.stage = 'BETA' AND b.valid_to IS NULL"
+                    + " AND b.payload_json = ins.payload_json))"
+                    + " SELECT count(*) FROM ins",
+                k,
+                Integer.class);
+        written.merge(key.flowId(), inserted == null ? 0 : inserted, Integer::sum);
+      }
+      jdbc.execute("SET LOCAL sdmxdw.bulk_load = 'off'");
 
       List<FlowResult> results = new ArrayList<>();
       for (Long id : recordOrder) {
