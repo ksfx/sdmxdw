@@ -20,7 +20,9 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 
 /** Runs real Python / R steps against a running server (read API via the run credential). */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest(
+    webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+    properties = AbstractIntegrationTest.TEST_PROCESSES_DIR)
 class ProcessRunnerTest extends AbstractIntegrationTest {
 
   @Autowired private ProcessService processService;
