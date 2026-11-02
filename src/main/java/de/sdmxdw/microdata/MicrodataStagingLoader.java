@@ -345,7 +345,7 @@ public class MicrodataStagingLoader {
       if (full()) {
         return List.of();
       }
-      // partitions of new periods, before this transaction reads microdata_record (V24)
+      // partitions of new periods, before this transaction reads microdata_record (V19)
       List<MicrodataPartitions.Key> keys = new ArrayList<>();
       jdbc.query(
           "SELECT DISTINCT flow_id, period FROM md_load",

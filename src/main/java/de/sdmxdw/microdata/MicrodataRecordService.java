@@ -63,7 +63,7 @@ public class MicrodataRecordService {
     this.partitions = partitions;
   }
 
-  /** A record by id; the flow selects its partitions (V24). */
+  /** A record by id; the flow selects its partitions (V19). */
   @PostAuthorize("returnObject.stage().name() == 'BETA' or hasRole('DATENMANAGER')")
   public MicrodataRecord findById(Long flowId, Long recordId) {
     return microdataRecordRepository.findByIdInFlow(recordId, flowId).orElseThrow();
@@ -191,7 +191,7 @@ public class MicrodataRecordService {
       Map<String, List<Map<String, String>>> groupValuesByGroupCode,
       String recordedBy,
       String comment) {
-    // before anything reads the records: a new partition locks the table briefly (V24)
+    // before anything reads the records: a new partition locks the table briefly (V19)
     partitions.ensure(flowId, reportingPeriod);
     List<FieldDefinition> fields = microdataFlowService.findFields(flowId);
     Map<FacetSlot, String> facetValues = new LinkedHashMap<>();

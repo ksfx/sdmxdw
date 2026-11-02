@@ -9,7 +9,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.test.context.support.WithMockUser;
 
-/** Records are stored in one partition per flow and reporting period, created on demand (V24). */
+/** Records are stored in one partition per flow and reporting period, created on demand (V19). */
 class MicrodataPartitionsTest extends AbstractIntegrationTest {
 
   @Autowired private MicrodataFlowService flowService;

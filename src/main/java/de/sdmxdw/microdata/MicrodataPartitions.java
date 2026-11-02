@@ -10,7 +10,7 @@ import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * Microdata records live in one partition per flow and reporting period (V24, #17). Before records
+ * Microdata records live in one partition per flow and reporting period (V19, #17). Before records
  * of a new period are written, its partition has to exist. Creating a partition briefly locks the
  * whole table, so it runs in a short transaction of its own - never inside a long load, which would
  * otherwise block the explorer for minutes. Call {@link #ensure} before the writing transaction

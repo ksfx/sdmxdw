@@ -123,7 +123,7 @@ public class MicrodataQueryRepository {
       params.addValue("periods", query.reportingPeriods());
     }
     if (query.freeText() != null && !query.freeText().isBlank()) {
-      // values only in flows of moderate size; ids through the trigram index (V21)
+      // values only in flows of moderate size; ids through the trigram index (V19)
       sql.append(
           searchesValues(query.flowId(), query.stage())
               ? " AND (entity_id ILIKE :freeText ESCAPE '\\'"
@@ -248,7 +248,7 @@ public class MicrodataQueryRepository {
         "SELECT a.*, b.payload_json AS beta_payload FROM microdata_record a JOIN ("
             + pendingKeys(query, facetByField, params)
             + " ORDER BY p.reporting_period, p.entity_id LIMIT :limit OFFSET :offset) page"
-            // flow and period select the partition of each record (V24)
+            // flow and period select the partition of each record (V19)
             + " ON page.record_id = a.id AND a.microdata_flow_id = :flowId"
             + " AND a.reporting_period = page.reporting_period"
             + " LEFT JOIN microdata_record b ON b.microdata_flow_id = a.microdata_flow_id"
