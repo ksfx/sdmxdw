@@ -422,6 +422,11 @@ public class MicrodataRecordService {
   }
 
   @PreAuthorize("#stage.name() == 'BETA' or hasRole('DATENMANAGER')")
+  /** Whether the explorer's text search also searches field values (not in very large flows). */
+  public boolean textSearchCoversValues(Long flowId, MicrodataStage stage) {
+    return microdataQueryRepository.searchesValues(flowId, stage);
+  }
+
   public List<String> findReportingPeriods(Long flowId, MicrodataStage stage) {
     return microdataQueryRepository.reportingPeriods(flowId, stage.name());
   }

@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 import javax.sql.DataSource;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -63,6 +64,34 @@ public class MicrodataQueryRepository {
     return count == null ? 0 : count;
   }
 
+  /** Up to this many current records the text search also looks into the field values. */
+  public static final int TEXT_SEARCH_VALUES_LIMIT = 100_000;
+
+  private final Map<String, long[]> sizeCache = new ConcurrentHashMap<>();
+
+  /**
+   * Whether the text search of a flow also searches the values: false for flows with more than
+   * {@link #TEXT_SEARCH_VALUES_LIMIT} current records. Counted up to the limit, cached a minute.
+   */
+  public boolean searchesValues(Long flowId, MicrodataStage stage) {
+    String key = flowId + "|" + stage;
+    long now = System.currentTimeMillis();
+    long[] cached = sizeCache.get(key);
+    if (cached == null || now - cached[1] > 60_000) {
+      Long n =
+          jdbc.queryForObject(
+              "SELECT count(*) FROM (SELECT 1 FROM microdata_record WHERE microdata_flow_id = :flow"
+                  + " AND stage = :stage AND valid_to IS NULL LIMIT :cap) x",
+              new MapSqlParameterSource("flow", flowId)
+                  .addValue("stage", stage.name())
+                  .addValue("cap", TEXT_SEARCH_VALUES_LIMIT + 1),
+              Long.class);
+      cached = new long[] {n == null ? 0 : n, now};
+      sizeCache.put(key, cached);
+    }
+    return cached[0] <= TEXT_SEARCH_VALUES_LIMIT;
+  }
+
   /** Reporting periods of a flow, read with a loose index scan: one index probe per period. */
   public List<String> reportingPeriods(Long flowId, String stage) {
     return jdbc.queryForList(
@@ -95,7 +124,7 @@ public class MicrodataQueryRepository {
         String.class);
   }
 
-  private static String where(
+  private String where(
       MicrodataQuery query, Map<String, FacetSlot> facetByField, MapSqlParameterSource params) {
     StringBuilder sql = new StringBuilder(" WHERE microdata_flow_id = :flowId AND stage = :stage");
     params.addValue("flowId", query.flowId()).addValue("stage", query.stage().name());
@@ -110,8 +139,12 @@ public class MicrodataQueryRepository {
       params.addValue("periods", query.reportingPeriods());
     }
     if (query.freeText() != null && !query.freeText().isBlank()) {
+      // values only in flows of moderate size; ids through the trigram index (V21)
       sql.append(
-          " AND (entity_id ILIKE :freeText ESCAPE '\\' OR payload_json ILIKE :freeText ESCAPE '\\')");
+          searchesValues(query.flowId(), query.stage())
+              ? " AND (entity_id ILIKE :freeText ESCAPE '\\'"
+                  + " OR payload_json ILIKE :freeText ESCAPE '\\')"
+              : " AND entity_id ILIKE :freeText ESCAPE '\\'");
       params.addValue("freeText", "%" + likeEscape(query.freeText().trim()) + "%");
     }
     appendFieldFilters(sql, query.fieldFilters(), facetByField, params);
@@ -255,7 +288,7 @@ public class MicrodataQueryRepository {
    * {@code record_id, reporting_period, entity_id} of the pending records matching the query; only
    * field and text filters need the records themselves.
    */
-  private static String pendingKeys(
+  private String pendingKeys(
       MicrodataQuery query, Map<String, FacetSlot> facetByField, MapSqlParameterSource params) {
     StringBuilder sql =
         new StringBuilder(

@@ -81,8 +81,10 @@
                     </select>
                 </div>
                 <div class="form-control">
-                    <label class="label text-xs font-semibold py-1">Entity id or text contains</label>
-                    <input class="input input-bordered input-sm w-64" type="search" name="q" th:value="${query}" placeholder="e.g. I-0001 or Zürich"/>
+                    <label class="label text-xs font-semibold py-1" th:text="${textSearchValues} ? 'Entity id or text contains' : 'Entity id contains'">Entity id or text contains</label>
+                    <input class="input input-bordered input-sm w-64" type="search" name="q" th:value="${query}"
+                           th:placeholder="${textSearchValues} ? 'e.g. I-0001 or Zürich' : 'e.g. I-0001'"
+                           th:title="${textSearchValues} ? null : 'This flow is large: the text search looks at entity ids only. Use the pickers or the read API to filter by field values.'"/>
                 </div>
                 <button class="btn btn-primary btn-sm" type="submit">Filter</button>
                 <a class="btn btn-sm" th:href="@{/explore/microdata/{id}(id=${flow.id},view=${view},stage=${stage})}">Reset</a>

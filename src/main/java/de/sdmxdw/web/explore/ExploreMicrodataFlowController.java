@@ -141,6 +141,7 @@ public class ExploreMicrodataFlowController {
     model.addAttribute("reportingPeriods", recordService.findReportingPeriods(flowId, dataStage));
     model.addAttribute("reportingPeriod", reportingPeriod);
     model.addAttribute("query", q);
+    model.addAttribute("textSearchValues", recordService.textSearchCoversValues(flowId, dataStage));
     model.addAttribute(
         "facetsUrl",
         UriComponentsBuilder.fromPath("/explore/microdata/{id}/facets")
