@@ -24,8 +24,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.TreeMap;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
@@ -128,7 +126,8 @@ public class ExploreMicrodataFlowController {
 
     model.addAttribute("flow", flow);
     model.addAttribute(
-        "descriptionSummaryHtml", markdown.render(firstParagraph(flow.description())));
+        "descriptionSummaryHtml",
+        markdown.render(MarkdownRenderer.firstParagraph(flow.description())));
     model.addAttribute("isDatenmanager", dm);
     model.addAttribute("view", selectedView.name());
     model.addAttribute("stage", selectedStage.name());
@@ -351,37 +350,6 @@ public class ExploreMicrodataFlowController {
       List<Code> codes,
       MicrodataFlow referencedFlow) {}
 
-  /** First paragraph of a Markdown text (the summary shown in the page header). */
-  static String firstParagraph(String text) {
-    if (text == null || text.isBlank()) {
-      return null;
-    }
-    String trimmed = text.strip();
-    int end = trimmed.indexOf("\n\n");
-    return end < 0 ? trimmed : trimmed.substring(0, end);
-  }
-
-  /**
-   * A full stop before a capital letter, but not after abbreviations like "Art.", "z. B." or "d.
-   * h.".
-   */
-  private static final Pattern SENTENCE_END =
-      Pattern.compile(
-          "(?<!\\b\\p{L})(?<!\\b(?:Art|Abs|Ziff|Nr|Kap|bzw|vgl|ca|Bst|lit|al|bspw|inkl))"
-              + "\\.\\s+(?=[A-ZÄÖÜ])");
-
-  /** First sentence of a Markdown definition as plain text, for tooltips. */
-  static String summary(String description) {
-    String paragraph = firstParagraph(description);
-    if (paragraph == null) {
-      return null;
-    }
-    String plain = paragraph.replaceAll("[*_`#>|]", "").replaceAll("\\s+", " ").strip();
-    Matcher end = SENTENCE_END.matcher(plain);
-    String sentence = end.find() ? plain.substring(0, end.start() + 1) : plain;
-    return sentence.length() > 240 ? sentence.substring(0, 237) + "..." : sentence;
-  }
-
   // --- record page, history and correction (#16) -------------------------------------------------
 
   @GetMapping("/records/{recordId}")
@@ -415,7 +383,7 @@ public class ExploreMicrodataFlowController {
           new FieldRow(
               f.fieldCode(),
               f.label(),
-              summary(f.description()),
+              MarkdownRenderer.summary(f.description()),
               value,
               codeNames(f).get(value),
               referenceLink(f, value, record),

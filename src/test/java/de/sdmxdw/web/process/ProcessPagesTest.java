@@ -118,4 +118,37 @@ class ProcessPagesTest extends AbstractIntegrationTest {
     assertThat(body(get("/processes/shared").with(dm))).contains("sdmxdw_sdk.py");
     assertThat(body(get("/processes/secrets").with(dm))).contains("Add or replace");
   }
+
+  @Test
+  void rProcessWithMarkdownDescription() throws Exception {
+    RequestPostProcessor dm = as(AppUserRole.DATENMANAGER);
+    String name = "R pages test " + (++counter) + " " + System.nanoTime() % 100000;
+    String location =
+        mvc.perform(
+                post("/processes")
+                    .param("name", name)
+                    .param("language", "r")
+                    .param("description", "Loads **EKE** data.\n\n- step one\n- <script>x</script>")
+                    .with(dm)
+                    .with(csrf()))
+            .andExpect(status().is3xxRedirection())
+            .andReturn()
+            .getResponse()
+            .getRedirectedUrl();
+    assertThat(location).endsWith("file=main.R");
+    var process = processRepository.findByName(name).orElseThrow();
+    assertThat(files.read(process.folder(), "main.R")).contains("sdmxdw.R");
+    assertThat(process.steps().getFirst().scriptPath()).isEqualTo("main.R");
+    assertThat(process.languages()).containsExactly("R");
+
+    String overview = body(get("/processes/" + process.id()).with(dm));
+    assertThat(overview)
+        .contains("<strong>EKE</strong>")
+        .contains("<li>step one</li>")
+        .doesNotContain("<script>x</script>");
+    assertThat(overview.indexOf("markdown-body")).isLessThan(overview.indexOf("step-graph"));
+    assertThat(body(get("/processes").with(dm)))
+        .contains("Loads EKE data.")
+        .contains("value=\"r\"");
+  }
 }

@@ -39,6 +39,27 @@ public record Process(
             .toList();
   }
 
+  /**
+   * Runtimes of the script steps ("Python", "R"): a step's runtime follows from the extension of
+   * its script, so a process may mix both.
+   */
+  public List<String> languages() {
+    if (steps == null) {
+      return List.of();
+    }
+    boolean python =
+        steps.stream()
+            .anyMatch(
+                s ->
+                    s.type() == ProcessStepType.SCRIPT
+                        && s.scriptPath() != null
+                        && s.scriptPath().toLowerCase().endsWith(".py"));
+    boolean r = steps.stream().anyMatch(ProcessStep::isRScript);
+    return python && r
+        ? List.of("Python", "R")
+        : python ? List.of("Python") : r ? List.of("R") : List.of();
+  }
+
   public boolean scheduled() {
     return schedule != null && !schedule.isBlank();
   }

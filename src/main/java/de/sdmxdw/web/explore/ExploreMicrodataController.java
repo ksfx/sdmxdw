@@ -12,6 +12,7 @@ import de.sdmxdw.microdata.MicrodataStage;
 import de.sdmxdw.structure.category.Category;
 import de.sdmxdw.structure.category.CategoryScheme;
 import de.sdmxdw.structure.category.CategorySchemeService;
+import de.sdmxdw.web.MarkdownRenderer;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -147,7 +148,7 @@ public class ExploreMicrodataController {
               flow.name(),
               !schemeFlowIds.contains(flowId),
               requiredReferences >= 2 && !referencedByOthers,
-              ExploreMicrodataFlowController.summary(flow.description()),
+              MarkdownRenderer.summary(flow.description()),
               fields.stream()
                   .map(
                       f ->
@@ -160,7 +161,7 @@ public class ExploreMicrodataController {
                               f.obligation(),
                               f.subtype(),
                               f.subtypeRule(),
-                              ExploreMicrodataFlowController.summary(f.description())))
+                              MarkdownRenderer.summary(f.description())))
                   .toList()));
     }
     return new RelationGraph(scheme.artefactId(), scheme.name(), nodes, edges);

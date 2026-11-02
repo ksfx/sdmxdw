@@ -10,7 +10,10 @@
                 <p class="text-sm"><a class="link" th:href="@{/processes}">Processes</a></p>
                 <h1 class="text-2xl font-bold" th:text="${process.name}"></h1>
                 <p class="text-sm opacity-70 font-mono" th:text="'folder ' + ${process.folder} + '/'"></p>
-                <p class="mt-1 max-w-3xl" th:if="${process.description}" th:text="${process.description}"></p>
+                <p class="text-xs mt-1" th:unless="${#lists.isEmpty(process.languages())}">
+                    <span th:each="l : ${process.languages()}" class="badge badge-sm badge-outline mr-1" th:text="${l}"
+                          title="Runtime of the script steps, from the extension of their scripts (.py: Python, .R: Rscript)"></span>
+                </p>
                 <p class="text-xs opacity-70 mt-2">
                     <span th:if="${process.schedule == null}">Manual start</span>
                     <span th:if="${process.schedule != null}" th:text="'Schedule ' + ${process.schedule} + (${process.enabled} ? ' - next: ' + ${nextRuns} : ' (paused)')"></span>
@@ -40,6 +43,9 @@
 
     <!-- ===== overview: steps ===== -->
     <th:block th:if="${tab == 'overview'}">
+        <div class="card bg-base-100 shadow-xl p-6" th:if="${descriptionHtml != ''}">
+            <div class="markdown-body max-w-4xl" th:utext="${descriptionHtml}"></div>
+        </div>
         <div class="card bg-base-100 shadow-xl p-6" th:if="${!#lists.isEmpty(process.steps)}">
             <div class="flex justify-between items-center mb-2">
                 <h2 class="font-bold">Flow</h2>
@@ -300,8 +306,9 @@
                 <label class="form-control"><span class="label-text text-sm">Failure notification (e-mail, comma-separated; empty = all Datenmanager)</span>
                     <input class="input input-bordered input-sm" name="notifyEmail" th:value="${process.notifyEmail}"/></label>
             </div>
-            <label class="form-control"><span class="label-text text-sm">Description</span>
-                <textarea class="textarea textarea-bordered" name="description" rows="2" th:text="${process.description}"></textarea></label>
+            <label class="form-control"><span class="label-text text-sm">Description (Markdown, shown above the flow diagram)</span>
+                <textarea class="textarea textarea-bordered font-mono text-sm" name="description" rows="8" th:text="${process.description}"
+                          placeholder="What the process does, its inputs and outputs, whom to ask..."></textarea></label>
             <div class="grid md:grid-cols-3 gap-4">
                 <label class="form-control"><span class="label-text text-sm">Schedule (cron: sec min hour day month weekday)</span>
                     <input class="input input-bordered input-sm font-mono" name="schedule" list="cron-presets" th:value="${process.schedule}" placeholder="empty = manual only"/>

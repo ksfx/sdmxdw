@@ -28,11 +28,12 @@
                     <td>
                         <a class="link link-primary font-semibold" th:href="@{/processes/{id}(id=${p.id})}" th:text="${p.name}"></a>
                         <div class="text-xs opacity-60 font-mono" th:text="${p.folder} + '/'"></div>
-                        <div class="text-xs opacity-70 max-w-md truncate" th:if="${p.description}" th:title="${p.description}" th:text="${p.description}"></div>
+                        <div class="text-xs opacity-70 max-w-md truncate" th:if="${r.summary}" th:title="${r.summary}" th:text="${r.summary}"></div>
                     </td>
                     <td class="text-xs">
                         <span th:each="s, it : ${p.steps}" th:text="${s.stepKey} + (${it.last} ? '' : ' → ')"></span>
                         <span th:if="${#lists.isEmpty(p.steps)}" class="text-warning">no steps</span>
+                        <div><span th:each="l : ${p.languages()}" class="badge badge-xs badge-outline mr-1" th:text="${l}"></span></div>
                     </td>
                     <td class="text-xs">
                         <span th:if="${p.schedule == null}" class="opacity-60">manual</span>
@@ -75,8 +76,15 @@
             <input class="input input-bordered w-full" name="name" placeholder="Name, e.g. EKE quarterly delivery" required
                    oninput="const f=this.form.folder; if(!f.dataset.touched){f.value=this.value.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'')}"/>
             <input class="input input-bordered w-full font-mono" name="folder" placeholder="folder" oninput="this.dataset.touched=1"/>
-            <textarea class="textarea textarea-bordered w-full" name="description" placeholder="Description (optional)"></textarea>
-            <p class="text-xs opacity-60">Creates the folder with a starter script <code>main.py</code> and one step.</p>
+            <textarea class="textarea textarea-bordered w-full" name="description" placeholder="Description (optional, Markdown)"></textarea>
+            <div class="flex gap-6 items-center">
+                <span class="text-sm">Starter script</span>
+                <label class="label cursor-pointer gap-2"><input type="radio" class="radio radio-sm" name="language" value="python" checked/><span>Python <code>main.py</code></span></label>
+                <label class="label cursor-pointer gap-2"><input type="radio" class="radio radio-sm" name="language" value="r"/><span>R <code>main.R</code></span></label>
+            </div>
+            <p class="text-xs opacity-60">Creates the folder with the starter script and one step. Each step runs with the runtime of its script's extension
+                (<code>.py</code>: Python, <code>.R</code>: Rscript), so a process can mix both.
+                <span th:unless="${rAvailable}" class="text-warning">R is not configured on this server (<code>sdmxdw.processes.r-executable</code>) - R steps would fail.</span></p>
             <div class="modal-action">
                 <button type="button" class="btn" onclick="this.closest('dialog').close()">Cancel</button>
                 <button class="btn btn-primary" type="submit">Create</button>

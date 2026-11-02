@@ -48,6 +48,46 @@ public class ProcessService {
       print("Hello from", param("name", "SDMxDW"))
       """;
 
+  static final String STARTER_R =
+      """
+      # Starter script of a SDMxDW process.
+      #
+      # Write deliveries with the SDK (they are loaded into Alpha after this step):
+      #   sdmxdw_write("AGENCY:DATAFLOW(1.0.0)",
+      #                data.frame(FREQ = "A", TIME_PERIOD = "2026", OBS_VALUE = 1))
+      # Read data with sdmxdw_read(...) / sdmxdw_read_microdata(...).
+
+      source(file.path(Sys.getenv("SDMXDW_SHARED_DIR"), "sdmxdw.R"))
+
+      message("Hello from ", sdmxdw_param("name", "SDMxDW"))
+      """;
+
+  /**
+   * Language of the starter script of a new process. Which runtime runs a step is decided by the
+   * extension of its script (.py: Python, .R: Rscript), so a process may mix both.
+   */
+  public enum Language {
+    PYTHON("main.py", STARTER_PY),
+    R("main.R", STARTER_R);
+
+    private final String starterScript;
+    private final String starterContent;
+
+    Language(String starterScript, String starterContent) {
+      this.starterScript = starterScript;
+      this.starterContent = starterContent;
+    }
+
+    public String starterScript() {
+      return starterScript;
+    }
+
+    /** PYTHON for blank or unknown values. */
+    public static Language parse(String value) {
+      return value != null && value.strip().equalsIgnoreCase("r") ? R : PYTHON;
+    }
+  }
+
   private final ProcessRepository processRepository;
   private final ProcessRunRepository runRepository;
   private final ProcessStepRunRepository stepRunRepository;
@@ -141,6 +181,13 @@ public class ProcessService {
   @PreAuthorize("hasRole('DATENMANAGER')")
   @Transactional
   public Process create(String name, String description, String folder, String user) {
+    return create(name, description, folder, Language.PYTHON, user);
+  }
+
+  @PreAuthorize("hasRole('DATENMANAGER')")
+  @Transactional
+  public Process create(
+      String name, String description, String folder, Language language, String user) {
     String cleanName = required(name, "Name");
     String cleanFolder = folder == null || folder.isBlank() ? slug(cleanName) : folder.strip();
     if (!ProcessFiles.FOLDER.matcher(cleanFolder).matches()
@@ -155,8 +202,9 @@ public class ProcessService {
       throw new IllegalArgumentException("The folder '" + cleanFolder + "' is already used");
     }
     files.ensureSharedSdks();
-    files.ensureFolder(cleanFolder, "main.py", STARTER_PY);
-    String script = files.exists(cleanFolder, "main.py") ? "main.py" : null;
+    files.ensureFolder(cleanFolder, language.starterScript, language.starterContent);
+    String script =
+        files.exists(cleanFolder, language.starterScript) ? language.starterScript : null;
     Instant now = Instant.now();
     Process saved =
         processRepository.save(

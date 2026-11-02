@@ -16,6 +16,7 @@ import de.sdmxdw.process.ProcessStep;
 import de.sdmxdw.process.ProcessStepRun;
 import de.sdmxdw.process.ProcessStepType;
 import de.sdmxdw.structure.dataflow.DataflowService;
+import de.sdmxdw.web.MarkdownRenderer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
@@ -53,6 +54,7 @@ public class ProcessController {
   private final DataflowService dataflowService;
   private final MicrodataFlowService microdataFlowService;
   private final ObjectMapper objectMapper;
+  private final MarkdownRenderer markdown;
 
   public ProcessController(
       ProcessService processService,
@@ -61,7 +63,9 @@ public class ProcessController {
       ProcessGitService gitService,
       DataflowService dataflowService,
       MicrodataFlowService microdataFlowService,
-      ObjectMapper objectMapper) {
+      ObjectMapper objectMapper,
+      MarkdownRenderer markdown) {
+    this.markdown = markdown;
     this.processService = processService;
     this.codeService = codeService;
     this.secretService = secretService;
@@ -83,9 +87,11 @@ public class ProcessController {
               p.scheduled() ? CronDescriptions.describeNextRuns(p.schedule()) : null,
               processService.latestRun(p.id()).orElse(null),
               processService.isRunning(p.id()),
-              !processService.params(p).isEmpty()));
+              !processService.params(p).isEmpty(),
+              MarkdownRenderer.summary(p.description())));
     }
     model.addAttribute("rows", rows);
+    model.addAttribute("rAvailable", processService.rAvailable());
     return "process/list";
   }
 
@@ -94,12 +100,15 @@ public class ProcessController {
       @RequestParam String name,
       @RequestParam(required = false) String description,
       @RequestParam(required = false) String folder,
+      @RequestParam(required = false) String language,
       Authentication auth,
       RedirectAttributes redirect) {
     try {
-      Process p = processService.create(name, description, folder, auth.getName());
-      redirect.addFlashAttribute("flash", "Process created with a starter script main.py.");
-      return "redirect:/processes/" + p.id() + "?tab=code&file=main.py";
+      ProcessService.Language lang = ProcessService.Language.parse(language);
+      Process p = processService.create(name, description, folder, lang, auth.getName());
+      String script = lang.starterScript();
+      redirect.addFlashAttribute("flash", "Process created with a starter script " + script + ".");
+      return "redirect:/processes/" + p.id() + "?tab=code&file=" + script;
     } catch (IllegalArgumentException e) {
       redirect.addFlashAttribute("error", e.getMessage());
       return "redirect:/processes";
@@ -144,6 +153,7 @@ public class ProcessController {
 
   private void overviewModel(Model model, Process process) {
     model.addAttribute("tab", "overview");
+    model.addAttribute("descriptionHtml", markdown.render(process.description()));
     List<ProcessFiles.FileEntry> scripts =
         codeService.list(process.folder()).stream()
             .filter(f -> f.language().equals("python") || f.language().equals("r"))
@@ -697,7 +707,12 @@ public class ProcessController {
   }
 
   public record ProcessRow(
-      Process process, String nextRuns, ProcessRun lastRun, boolean running, boolean hasParams) {}
+      Process process,
+      String nextRuns,
+      ProcessRun lastRun,
+      boolean running,
+      boolean hasParams,
+      String summary) {}
 
   public record StepView(ProcessStepRun step, ProcessLoader.StepLoadReport report) {}
 
