@@ -113,15 +113,36 @@
 
       const input = el('input', 'input input-bordered input-xs w-full');
       input.type = 'search';
-      input.placeholder = 'Search ' + d.values.length + ' codes…';
+      input.placeholder = d.truncated ? 'Search values…' : 'Search ' + d.values.length + ' codes…';
       input.setAttribute('autocomplete', 'off');
       // dataflow page: floating overlay; explorer tree: inline (the tree panel clips overlays)
       const overlay = this.mode === 'submit' ? ' absolute z-30 w-[28rem] shadow-lg' : ' w-full';
       const list = el('ul', 'menu menu-xs bg-base-100 border border-base-300 rounded-box mt-1 max-h-64 overflow-y-auto flex-nowrap hidden' + overlay);
+      // a field with many values (e.g. counterparties) lists only the most frequent ones;
+      // typing then searches all of them on the server
+      let remote = null;
+      let timer = null;
+      const search = needle => {
+        clearTimeout(timer);
+        if (!d.truncated || !needle) { remote = null; return; }
+        timer = setTimeout(async () => {
+          const p = new URLSearchParams(this.query());
+          p.set('facetParam', d.param);
+          p.set('facetSearch', needle);
+          try {
+            const res = await fetch(this.url + (this.url.includes('?') ? '&' : '?') + p, { headers: { Accept: 'application/json' } });
+            if (!res.ok) return;
+            const data = await res.json();
+            const dim = data.dimensions.find(x => x.param === d.param);
+            if (input.value.trim().toLowerCase() === needle) { remote = dim ? dim.values : []; fill(); }
+          } catch (e) { /* keep the local list */ }
+        }, 300);
+      };
       const fill = () => {
         const needle = input.value.trim().toLowerCase();
         const chosen = this.selected.get(d.param);
-        const matches = d.values.filter(v => !chosen.has(v.code)
+        const source = remote || d.values;
+        const matches = source.filter(v => !chosen.has(v.code)
           && (!needle || v.code.toLowerCase().includes(needle) || (v.name || '').toLowerCase().includes(needle)));
         list.replaceChildren();
         matches.slice(0, MAX_ITEMS).forEach(v => {
@@ -138,10 +159,11 @@
           list.appendChild(li);
         });
         if (matches.length > MAX_ITEMS) list.appendChild(el('li', 'menu-title', (matches.length - MAX_ITEMS) + ' more – keep typing'));
+        else if (d.truncated && !remote) list.appendChild(el('li', 'menu-title', 'Most frequent values – type to search all'));
         if (!matches.length) list.appendChild(el('li', 'menu-title', 'No matching codes'));
       };
       input.addEventListener('focus', () => { fill(); list.classList.remove('hidden'); });
-      input.addEventListener('input', fill);
+      input.addEventListener('input', () => { remote = null; fill(); search(input.value.trim().toLowerCase()); });
       input.addEventListener('blur', () => list.classList.add('hidden'));
       input.addEventListener('keydown', ev => {
         if (ev.key === 'Escape') { input.blur(); }

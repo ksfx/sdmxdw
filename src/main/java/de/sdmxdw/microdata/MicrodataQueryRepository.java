@@ -63,11 +63,35 @@ public class MicrodataQueryRepository {
     return count == null ? 0 : count;
   }
 
+  /** Reporting periods of a flow, read with a loose index scan: one index probe per period. */
   public List<String> reportingPeriods(Long flowId, String stage) {
     return jdbc.queryForList(
-        "SELECT DISTINCT reporting_period FROM microdata_record WHERE microdata_flow_id = :flowId"
-            + " AND stage = :stage AND valid_to IS NULL ORDER BY reporting_period",
+        "WITH RECURSIVE p AS ("
+            + " (SELECT reporting_period FROM microdata_record WHERE stage = :stage"
+            + " AND microdata_flow_id = :flowId AND valid_to IS NULL"
+            + " ORDER BY reporting_period LIMIT 1)"
+            + " UNION ALL SELECT (SELECT r.reporting_period FROM microdata_record r"
+            + " WHERE r.stage = :stage AND r.microdata_flow_id = :flowId AND r.valid_to IS NULL"
+            + " AND r.reporting_period > p.reporting_period ORDER BY r.reporting_period LIMIT 1)"
+            + " FROM p WHERE p.reporting_period IS NOT NULL)"
+            + " SELECT reporting_period FROM p WHERE reporting_period IS NOT NULL",
         new MapSqlParameterSource("flowId", flowId).addValue("stage", stage),
+        String.class);
+  }
+
+  /** Reporting periods of all flows, newest first; a loose index scan over flows and periods. */
+  public List<String> reportingPeriods(String stage) {
+    return jdbc.queryForList(
+        "WITH RECURSIVE p AS ("
+            + " (SELECT microdata_flow_id AS f, reporting_period AS rp FROM microdata_record"
+            + " WHERE stage = :stage AND valid_to IS NULL"
+            + " ORDER BY microdata_flow_id, reporting_period LIMIT 1)"
+            + " UNION ALL SELECT n.f, n.rp FROM p, LATERAL (SELECT r.microdata_flow_id AS f,"
+            + " r.reporting_period AS rp FROM microdata_record r WHERE r.stage = :stage"
+            + " AND r.valid_to IS NULL AND (r.microdata_flow_id, r.reporting_period) > (p.f, p.rp)"
+            + " ORDER BY r.microdata_flow_id, r.reporting_period LIMIT 1) n)"
+            + " SELECT DISTINCT rp FROM p ORDER BY rp DESC",
+        new MapSqlParameterSource("stage", stage),
         String.class);
   }
 
@@ -123,9 +147,33 @@ public class MicrodataQueryRepository {
   }
 
   /** One page of records (for the explorer's record list). */
+  /**
+   * One page of records. The page is chosen on the keys alone (index-only for the usual filters),
+   * then only its records are read - deep pages no longer read every skipped record.
+   */
   public List<MicrodataRecord> findPage(MicrodataQuery query, Map<String, FacetSlot> facetByField) {
+    MapSqlParameterSource params = new MapSqlParameterSource();
+    StringBuilder keys =
+        new StringBuilder("SELECT id, reporting_period, entity_id FROM microdata_record")
+            .append(where(query, facetByField, params))
+            .append(" ORDER BY reporting_period, entity_id");
+    if (query.limit() != null) {
+      keys.append(" LIMIT :limit");
+      params.addValue("limit", query.limit());
+    }
+    if (query.offset() > 0) {
+      keys.append(" OFFSET :offset");
+      params.addValue("offset", query.offset());
+    }
     List<MicrodataRecord> rows = new ArrayList<>();
-    stream(query, facetByField, rows::add);
+    jdbc.query(
+        "SELECT r.* FROM microdata_record r JOIN ("
+            + keys
+            + ") page ON page.id = r.id ORDER BY page.reporting_period, page.entity_id",
+        params,
+        rs -> {
+          rows.add(map(rs));
+        });
     return rows;
   }
 
@@ -133,21 +181,37 @@ public class MicrodataQueryRepository {
    * Value counts of one indexed (facet) field under the query, for the explorer's pickers. The
    * caller removes the field's own filter so its alternatives stay visible.
    */
+  /**
+   * Values of an indexed field with their record counts, most frequent first.
+   *
+   * @param limit at most this many values
+   * @param search only values containing this text (case-insensitive), or null
+   */
   public Map<String, Long> facetCounts(
-      MicrodataQuery query, Map<String, FacetSlot> facetByField, FacetSlot slot) {
+      MicrodataQuery query,
+      Map<String, FacetSlot> facetByField,
+      FacetSlot slot,
+      int limit,
+      String search) {
     MapSqlParameterSource params = new MapSqlParameterSource();
     String column = slot.name() + "_value";
-    String sql =
-        "SELECT "
-            + column
-            + " AS v, count(*) AS n FROM microdata_record"
-            + where(query, facetByField, params)
-            + " AND "
-            + column
-            + " IS NOT NULL GROUP BY 1";
+    StringBuilder sql =
+        new StringBuilder("SELECT ")
+            .append(column)
+            .append(" AS v, count(*) AS n FROM microdata_record")
+            .append(where(query, facetByField, params))
+            .append(" AND ")
+            .append(column)
+            .append(" IS NOT NULL");
+    if (search != null && !search.isBlank()) {
+      sql.append(" AND ").append(column).append(" ILIKE :search ESCAPE '\\'");
+      params.addValue("search", "%" + likeEscape(search.strip()) + "%");
+    }
+    sql.append(" GROUP BY 1 ORDER BY n DESC, v LIMIT :limit");
+    params.addValue("limit", limit);
     Map<String, Long> counts = new LinkedHashMap<>();
     jdbc.query(
-        sql,
+        sql.toString(),
         params,
         rs -> {
           counts.put(rs.getString("v"), rs.getLong("n"));

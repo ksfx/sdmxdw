@@ -188,6 +188,9 @@ public class ExploreMicrodataFlowController {
     return "explore/microdata-flow";
   }
 
+  /** Values per picker; a field with many values lists the most frequent and is searched here. */
+  static final int FACET_VALUES = 200;
+
   @GetMapping(value = "/facets", produces = "application/json")
   @ResponseBody
   public Facets.Response facets(
@@ -195,16 +198,32 @@ public class ExploreMicrodataFlowController {
       @RequestParam(required = false) String stage,
       @RequestParam(required = false) String reportingPeriod,
       @RequestParam(required = false) String q,
+      @RequestParam(required = false) String facetParam,
+      @RequestParam(required = false) String facetSearch,
       @RequestParam MultiValueMap<String, String> params) {
     MicrodataStage facetStage = parseStage(stage, Roles.isDatenmanager());
     List<FieldDefinition> indexed =
         sortedFields(flowId).stream().filter(f -> f.facetSlot() != null).toList();
     MicrodataQuery query = query(flowId, facetStage, reportingPeriod, q, indexed, params, 0);
-    Map<String, Map<String, Long>> counts = recordService.findFieldFacets(query);
+    String onlyField =
+        facetParam != null && facetParam.startsWith(FIELD_PARAM_PREFIX)
+            ? facetParam.substring(FIELD_PARAM_PREFIX.length())
+            : null;
+    // one more than shown, to know whether the list is complete
+    Map<String, Map<String, Long>> counts =
+        recordService.findFieldFacets(query, onlyField, facetSearch, FACET_VALUES + 1);
     List<Facets.Dimension> dimensions = new ArrayList<>();
     for (FieldDefinition f : indexed) {
+      if (onlyField != null && !onlyField.equals(f.fieldCode())) {
+        continue;
+      }
       Map<String, String> names = codeNames(f);
-      Map<String, Long> values = new TreeMap<>(counts.getOrDefault(f.fieldCode(), Map.of()));
+      Map<String, Long> found = counts.getOrDefault(f.fieldCode(), Map.of());
+      boolean truncated = found.size() > FACET_VALUES;
+      Map<String, Long> values = new TreeMap<>();
+      found.entrySet().stream()
+          .limit(FACET_VALUES)
+          .forEach(e -> values.put(e.getKey(), e.getValue()));
       List<String> selected = params.getOrDefault(FIELD_PARAM_PREFIX + f.fieldCode(), List.of());
       selected.forEach(v -> values.putIfAbsent(v, 0L));
       dimensions.add(
@@ -218,9 +237,11 @@ public class ExploreMicrodataFlowController {
                           new Facets.Value(
                               e.getKey(), names.getOrDefault(e.getKey(), ""), e.getValue()))
                   .toList(),
-              selected.stream().sorted().toList()));
+              selected.stream().sorted().toList(),
+              truncated));
     }
-    return new Facets.Response(recordService.countRecords(query), dimensions);
+    return new Facets.Response(
+        onlyField != null ? -1 : recordService.countRecords(query), dimensions);
   }
 
   @PostMapping("/promote")

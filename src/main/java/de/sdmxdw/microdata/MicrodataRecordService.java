@@ -351,9 +351,24 @@ public class MicrodataRecordService {
    */
   @PreAuthorize("#query.stage().name() == 'BETA' or hasRole('DATENMANAGER')")
   public Map<String, Map<String, Long>> findFieldFacets(MicrodataQuery query) {
+    return findFieldFacets(query, null, null, Integer.MAX_VALUE);
+  }
+
+  /**
+   * Values per indexed field with counts under the other fields' selection.
+   *
+   * @param onlyField restrict to this field (search in one picker), or null for all
+   * @param search only values containing this text, or null
+   * @param limit at most this many values per field, most frequent first
+   */
+  public Map<String, Map<String, Long>> findFieldFacets(
+      MicrodataQuery query, String onlyField, String search, int limit) {
     Map<String, FacetSlot> facets = facetsByField(query.flowId());
     Map<String, Map<String, Long>> result = new LinkedHashMap<>();
     for (Map.Entry<String, FacetSlot> facet : facets.entrySet()) {
+      if (onlyField != null && !onlyField.equals(facet.getKey())) {
+        continue;
+      }
       Map<String, List<String>> others = new LinkedHashMap<>(query.fieldFilters());
       others.remove(facet.getKey());
       MicrodataQuery withoutOwn =
@@ -368,7 +383,8 @@ public class MicrodataRecordService {
               0);
       result.put(
           facet.getKey(),
-          microdataQueryRepository.facetCounts(withoutOwn, facets, facet.getValue()));
+          microdataQueryRepository.facetCounts(
+              withoutOwn, facets, facet.getValue(), limit, search));
     }
     return result;
   }
@@ -422,7 +438,7 @@ public class MicrodataRecordService {
 
   @PreAuthorize("#stage.name() == 'BETA' or hasRole('DATENMANAGER')")
   public List<String> findDistinctReportingPeriods(MicrodataStage stage) {
-    return microdataRecordRepository.findDistinctReportingPeriods(stage.name());
+    return microdataQueryRepository.reportingPeriods(stage.name());
   }
 
   @PreAuthorize("#stage.name() == 'BETA' or hasRole('DATENMANAGER')")

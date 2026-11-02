@@ -269,4 +269,37 @@ class ExploreMicrodataFlowPageTest extends AbstractIntegrationTest {
     assertThat(body(get(base).param("view", "activity").with(dm)))
         .contains("Documentation of field CURRENCY updated");
   }
+
+  @Test
+  void pickerOfAFieldWithManyValuesListsTheMostFrequentAndSearchesTheRest() throws Exception {
+    String suffix = "MFPF" + (++counter) + "_" + System.nanoTime() % 100000;
+    MicrodataFlow flow =
+        asDatenmanager(
+            () -> {
+              MicrodataFlow f =
+                  flowService.createFlow("TST", "MDF_" + suffix, "1.0.0", "Many", null);
+              flowService.addField(
+                  f.id(), "CP", "Counterparty", FieldDataType.STRING, null, true, FacetSlot.facet1);
+              for (int i = 0; i < 205; i++) {
+                // CP-0000 occurs twice, so it is the most frequent value
+                recordService.ingestRecord(
+                    f.id(),
+                    "L-" + i,
+                    "2026-Q3",
+                    Map.of("CP", String.format("CP-%04d", i == 1 ? 0 : i)),
+                    "t");
+              }
+              recordService.promoteToBeta(f.id(), "dm");
+              return f;
+            });
+    String base = "/explore/microdata/" + flow.id() + "/facets";
+    String all = body(get(base).with(oekonom));
+    assertThat(all)
+        .contains("\"truncated\":true")
+        .contains("\"code\":\"CP-0000\",\"name\":\"\",\"count\":2");
+    assertThat(all.split("\"code\":\"CP-").length - 1).isEqualTo(200);
+    String found =
+        body(get(base).param("facetParam", "f_CP").param("facetSearch", "cp-0204").with(oekonom));
+    assertThat(found).contains("CP-0204").doesNotContain("CP-0203");
+  }
 }

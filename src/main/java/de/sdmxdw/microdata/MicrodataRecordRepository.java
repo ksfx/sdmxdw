@@ -57,12 +57,6 @@ public interface MicrodataRecordRepository extends ListCrudRepository<MicrodataR
       @Param("facet4") String facet4,
       @Param("q") String q);
 
-  /** Feeds the reporting-period selector at the top of the microdata explorer. */
-  @Query(
-      "SELECT DISTINCT reporting_period FROM microdata_record WHERE stage = :stage"
-          + " AND valid_to IS NULL ORDER BY reporting_period DESC")
-  List<String> findDistinctReportingPeriods(@Param("stage") String stage);
-
   @Query(
       "SELECT * FROM microdata_record WHERE microdata_flow_id = :flowId AND entity_id = :entityId"
           + " AND reporting_period = :reportingPeriod AND stage = :stage ORDER BY valid_from")

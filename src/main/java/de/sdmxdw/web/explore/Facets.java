@@ -17,9 +17,22 @@ public final class Facets {
 
   /**
    * @param param request parameter carrying the selection, e.g. {@code k_FREQ} or {@code f_CCY}
+   * @param truncated only the most frequent values are listed; the picker searches the others on
+   *     the server ({@code facetSearch}), e.g. a field with 500,000 counterparties (#17)
    */
   public record Dimension(
-      String param, String code, String label, List<Value> values, List<String> selected) {}
+      String param,
+      String code,
+      String label,
+      List<Value> values,
+      List<String> selected,
+      boolean truncated) {
+
+    public Dimension(
+        String param, String code, String label, List<Value> values, List<String> selected) {
+      this(param, code, label, values, selected, false);
+    }
+  }
 
   public record Value(String code, String name, long count) {}
 }
