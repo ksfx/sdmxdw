@@ -91,7 +91,7 @@
             <div>
                 <h2 class="text-lg font-bold" id="relations-title"></h2>
                 <p class="text-xs opacity-60">
-                    Click an entity to show its attributes and details with links to the documentation (click again to close),
+                    Click an entity to show its details with links to the documentation on the right (click again to close),
                     drag to rearrange, scroll to zoom, double-click to open its records. Arrows point from
                     the referencing field to the referenced entity. M = mandatory, M* = mandatory with
                     dependencies, ▸ = subtype.
@@ -234,26 +234,16 @@
         setTimeout(() => relationsNetwork.focus(nodeId, {animation: true}), 120);
     }
 
-    // one entity open at a time (unless "All attributes" is on): opens nodeId, closes the others
+    // a click selects an entity and shows its details in the panel on the right; the graph itself
+    // only lists attributes when "All attributes" is on
     function openEntity(nodeId) {
-        const allOn = document.getElementById('relations-all-attributes').checked;
-        const changed = [];
-        if (!allOn) {
-            expandedNodes.forEach(id => { if (id !== nodeId) changed.push(id); });
-            expandedNodes.clear();
-        }
-        expandedNodes.add(nodeId);
-        changed.push(nodeId);
-        relationsNodes.update(changed.map(id => nodeView(relationsGraph.nodes.find(n => n.id === id))));
-        relayout(false);
+        relationsNetwork.selectNodes([nodeId]);
         focusEntity(nodeId);
         showPanel(nodeId);
     }
 
-    function closeEntity(nodeId) {
-        expandedNodes.delete(nodeId);
-        relationsNodes.update(nodeView(relationsGraph.nodes.find(n => n.id === nodeId)));
-        relayout(false);
+    function closeEntity() {
+        relationsNetwork.unselectAll();
         hidePanel();
     }
 
@@ -271,11 +261,6 @@
         a.href = href;
         a.target = '_blank';
         return a;
-    }
-
-    function selectEntity(nodeId) {
-        relationsNetwork.selectNodes([nodeId]);
-        openEntity(nodeId);
     }
 
     function hidePanel() {
@@ -299,7 +284,7 @@
         const close = el('button', 'btn btn-xs btn-ghost', '✕');
         close.type = 'button';
         close.title = 'Close details';
-        close.onclick = hidePanel;
+        close.onclick = closeEntity;
         head.appendChild(close);
         panel.appendChild(head);
         if (node.summary) panel.appendChild(el('p', 'mt-2 opacity-80', node.summary));
@@ -323,7 +308,7 @@
                     const go = el('button', 'link link-primary text-xs', '→ ' + target.name);
                     go.type = 'button';
                     go.title = 'Show ' + target.name + ' in the graph';
-                    go.onclick = () => selectEntity(target.id);
+                    go.onclick = () => openEntity(target.id);
                     li.appendChild(go);
                 }
             }
@@ -350,9 +335,6 @@
     function setAllAttributes(show) {
         expandedNodes.clear();
         if (show) relationsGraph.nodes.forEach(n => expandedNodes.add(n.id));
-        // switched off: the entity shown in the detail panel stays open
-        const panel = document.getElementById('relations-panel');
-        if (!show && !panel.classList.contains('hidden')) expandedNodes.add(Number(panel.dataset.nodeId));
         relationsNodes.update(relationsGraph.nodes.map(nodeView));
         relayout(true);
     }
@@ -427,8 +409,8 @@
             const nodeId = params.nodes[0];
             const panel = document.getElementById('relations-panel');
             const showing = !panel.classList.contains('hidden') && panel.dataset.nodeId === String(nodeId);
-            // a second click on the open entity closes it, any other entity replaces it
-            clickTimer = setTimeout(() => showing && expandedNodes.has(nodeId) ? closeEntity(nodeId) : openEntity(nodeId), 250);
+            // a second click on the selected entity closes the panel, any other entity replaces it
+            clickTimer = setTimeout(() => showing ? closeEntity() : openEntity(nodeId), 250);
         });
         relationsNetwork.on('doubleClick', params => {
             clearTimeout(clickTimer);
