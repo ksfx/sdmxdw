@@ -232,6 +232,9 @@ public class ObservationBulkLoader {
           ps.setString(2, s.timePeriod());
           ps.setString(3, s.json());
         });
+    // temp tables have no statistics: the planner would assume a handful of rows and pick a nested
+    // loop anti join below - quadratic, 12 min instead of 3 s for 147,000 rows
+    jdbc.execute("ANALYZE obs_stage");
     MapSqlParameterSource p =
         new MapSqlParameterSource("df", dataflowId)
             .addValue("now", Timestamp.from(Instant.now()))
@@ -240,6 +243,9 @@ public class ObservationBulkLoader {
         "INSERT INTO series (dataflow_id, series_key) SELECT DISTINCT :df, series_key"
             + " FROM obs_stage ON CONFLICT (dataflow_id, series_key) DO NOTHING",
         p);
+    // the series of a new dataflow were just inserted; without fresh statistics the planner sees
+    // none
+    jdbc.execute("ANALYZE series");
     String current =
         " FROM obs_stage st JOIN series s ON s.dataflow_id = :df AND s.series_key = st.series_key"
             + " JOIN observation o ON o.dataflow_id = :df AND o.series_id = s.id"
