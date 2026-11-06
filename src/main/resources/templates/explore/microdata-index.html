@@ -9,10 +9,6 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/htmx.org@2.0.3"></script>
     <script src="https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
-    <style>
-        /* expanded entities have no hover tooltip; vis-network would still show an empty box */
-        div.vis-tooltip:empty { display: none !important; }
-    </style>
 </head>
 <body class="min-h-screen bg-base-200">
 <div th:replace="~{fragments/nav :: nav}"></div>
@@ -125,24 +121,6 @@
 
     document.addEventListener('keydown', e => { if (e.key === 'Escape') closeRelations(); });
 
-    function fieldTooltip(node) {
-        const el = document.createElement('div');
-        el.style.cssText = 'font: 12px ui-sans-serif, system-ui; max-width: 360px;';
-        const title = document.createElement('div');
-        title.style.cssText = 'font-weight: 700; margin-bottom: 4px;';
-        title.textContent = node.name + ' (' + node.artefactId + ')';
-        el.appendChild(title);
-        node.fields.forEach(f => {
-            const row = document.createElement('div');
-            const type = f.type === 'REF' ? '→ ref' : f.type.toLowerCase();
-            row.textContent = (f.required ? '● ' : '○ ') + f.code + (f.groupCode ? ' [' + f.groupCode + ']' : '') + ' : ' + type;
-            row.style.color = f.type === 'REF' ? '#053771' : '#333';
-            el.appendChild(row);
-        });
-        if (node.fields.length === 0) el.appendChild(document.createTextNode('(no fields)'));
-        return el;
-    }
-
     let relationsGraph = null;
     let relationsNodes = null;
     const expandedNodes = new Set();
@@ -181,7 +159,6 @@
                 mono: {color: n.external ? '#555' : '#cfe3ff', size: 13},
             },
             widthConstraint: expanded ? {minimum: 220, maximum: 420} : {minimum: 130},
-            title: expanded ? '' : fieldTooltip(n),
             chosen: {label: false, node: true},
         };
     }
@@ -387,7 +364,7 @@
 
         if (relationsNetwork) relationsNetwork.destroy();
         relationsNetwork = new vis.Network(document.getElementById('relations-canvas'), {nodes, edges}, {
-            interaction: {hover: true, tooltipDelay: 300, keyboard: false},
+            interaction: {hover: true, keyboard: false},
             // draw labels even when zoomed out (default threshold 5 px left opened entities blank)
             nodes: {scaling: {label: {drawThreshold: 0}}},
             physics: {
