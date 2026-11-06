@@ -5,6 +5,8 @@
         <summary class="cursor-pointer text-sm">
             <span th:text="${df.artefactId}"></span>
             <span class="opacity-70" th:text="'- ' + ${df.name}"></span>
+            <a class="link link-primary text-xs ml-2" title="Open the dataflow page: all series, filters, observations, pending changes"
+               th:href="@{/explore/dataflows/{id}(id=${df.id})}" onclick="event.stopPropagation()">open ›</a>
         </summary>
         <div class="series-slot pl-4 mt-1">
             <span class="loading loading-spinner loading-xs"></span>
