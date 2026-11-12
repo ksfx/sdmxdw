@@ -149,6 +149,103 @@ public class MicrodataRecordService {
     return after;
   }
 
+  /**
+   * Creates a record in the explorer (#25): a new entity, or an existing entity in a period it has
+   * no current record for. Validated like a delivery; refused if the record exists already (that is
+   * a correction).
+   */
+  @PreAuthorize("hasRole('DATENMANAGER')")
+  @Transactional
+  public MicrodataRecord createRecord(
+      Long flowId,
+      String entityId,
+      String reportingPeriod,
+      Map<String, String> fieldValuesByCode,
+      Map<String, List<Map<String, String>>> groupValuesByGroupCode,
+      String comment,
+      String performedBy) {
+    String entity = entityId == null ? "" : entityId.strip();
+    String period = reportingPeriod == null ? "" : reportingPeriod.strip();
+    if (entity.isEmpty() || entity.length() > 128) {
+      throw new IllegalArgumentException("Entity id is required (at most 128 characters)");
+    }
+    if (period.isEmpty() || period.length() > 32) {
+      throw new IllegalArgumentException("Reporting period is required (at most 32 characters)");
+    }
+    // before the first read: a new partition locks the table briefly (V19)
+    partitions.ensure(flowId, period);
+    if (findCurrentOne(flowId, entity, period, MicrodataStage.ALPHA).isPresent()) {
+      throw new IllegalArgumentException(
+          entity + " @ " + period + " exists already - edit that record instead");
+    }
+    String reason = comment == null || comment.isBlank() ? null : comment.strip();
+    MicrodataRecord created =
+        ingest(
+            flowId, entity, period, fieldValuesByCode, groupValuesByGroupCode, performedBy, reason);
+    auditLogService.recordMicrodata(
+        flowId,
+        "CREATE_RECORD",
+        performedBy,
+        entity + " @ " + period + (reason == null ? "" : " (" + reason + ")"));
+    return created;
+  }
+
+  /**
+   * Deletes one record (#25): closes its current Alpha vintage, notes who deleted it and why, and
+   * writes an audit entry. Nothing is removed - the history keeps every vintage. A published record
+   * stays in Beta until the next promotion, which closes it as well. Refused while current records
+   * of the same period still reference the entity.
+   *
+   * @return whether the record is published, i.e. the deletion is now a pending change
+   */
+  @PreAuthorize("hasRole('DATENMANAGER')")
+  @Transactional
+  public boolean deleteRecord(
+      Long flowId, String entityId, String reportingPeriod, String reason, String performedBy) {
+    if (reason == null || reason.isBlank()) {
+      throw new IllegalArgumentException("A reason is required to delete a record");
+    }
+    findCurrentOne(flowId, entityId, reportingPeriod, MicrodataStage.ALPHA)
+        .orElseThrow(
+            () ->
+                new IllegalArgumentException(
+                    "No current Alpha record " + entityId + " @ " + reportingPeriod));
+    List<String> references = new ArrayList<>();
+    for (MicrodataFlow other : microdataFlowService.findAll()) {
+      for (FieldDefinition field : microdataFlowService.findFields(other.id())) {
+        if (!flowId.equals(field.referencedFlowId())) {
+          continue;
+        }
+        long n =
+            microdataQueryRepository.countReferencing(
+                other.id(), reportingPeriod, field.fieldCode(), field.groupCode(), entityId);
+        if (n > 0) {
+          references.add(n + " in " + other.artefactId() + " (" + field.fieldCode() + ")");
+        }
+      }
+    }
+    if (!references.isEmpty()) {
+      throw new IllegalArgumentException(
+          entityId
+              + " is still referenced by records of "
+              + reportingPeriod
+              + ": "
+              + String.join(", ", references)
+              + " - change or delete them first");
+    }
+    microdataRecordRepository.deleteCurrentAlpha(
+        flowId, entityId, reportingPeriod, Instant.now(), performedBy, reason.strip());
+    Optional<MicrodataRecord> beta =
+        findCurrentOne(flowId, entityId, reportingPeriod, MicrodataStage.BETA);
+    beta.ifPresent(microdataQueryRepository::addPendingDeletion);
+    auditLogService.recordMicrodata(
+        flowId,
+        "DELETE_RECORD",
+        performedBy,
+        entityId + " @ " + reportingPeriod + " (" + reason.strip() + ")");
+    return beta.isPresent();
+  }
+
   /** "FIELD: old -> new; GROUP: 2 -> 3 entries" - for audit entries and the pending list. */
   public String describeChanges(MicrodataPayload before, MicrodataPayload after) {
     List<String> changes = new ArrayList<>();
@@ -395,7 +492,7 @@ public class MicrodataRecordService {
     return result;
   }
 
-  /** Alpha records a promotion would publish (new or changed compared to Beta). */
+  /** What a promotion would publish: new or changed Alpha records and deleted ones (#25). */
   @PreAuthorize("hasRole('DATENMANAGER')")
   public PendingPage findPendingChanges(MicrodataQuery query) {
     Map<String, FacetSlot> facets = facetsByField(query.flowId());
@@ -476,12 +573,17 @@ public class MicrodataRecordService {
         microdataQueryRepository.promoteAll(flowId, Timestamp.from(Instant.now()), performedBy);
     int promoted = counts[0];
     int unchanged = counts[1];
+    int deleted = counts[2];
     auditLogService.recordMicrodata(
         flowId,
         "PROMOTE_ALPHA_TO_BETA",
         performedBy,
-        promoted + " promoted, " + unchanged + " unchanged");
-    return new PromotionResult(promoted, unchanged);
+        promoted
+            + " promoted, "
+            + unchanged
+            + " unchanged"
+            + (deleted > 0 ? ", " + deleted + " deleted" : ""));
+    return new PromotionResult(promoted, unchanged, deleted);
   }
 
   /**
@@ -572,7 +674,7 @@ public class MicrodataRecordService {
 
   public record PageResult(List<MicrodataRecord> records, long totalCount, int page, int size) {}
 
-  public record PromotionResult(int promoted, int unchanged) {}
+  public record PromotionResult(int promoted, int unchanged, int deleted) {}
 
   /**
    * Serializable because it travels through a redirect as a flash attribute, which Spring Session

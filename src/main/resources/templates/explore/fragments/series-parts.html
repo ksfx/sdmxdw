@@ -85,7 +85,72 @@
     </tr>
     </thead>
     <tbody>
+    <tr th:if="${tableMessage != null or tableError != null}">
+        <td colspan="99" class="py-1">
+            <span th:if="${tableMessage}" class="text-sm text-success" th:text="${tableMessage}"></span>
+            <span th:if="${tableError}" class="text-sm text-error" th:text="${tableError}"></span>
+        </td>
+    </tr>
+    <!-- add a period (#25) -->
+    <tr th:if="${canEdit and addRow}" class="bg-info/10">
+        <td colspan="99">
+            <form class="flex flex-wrap items-end gap-3" method="post"
+                  th:action="@{/explore/dataflows/{id}/series/{sid}/add(id=${dataflow.id},sid=${seriesId})}"
+                  th:attr="hx-post=@{/explore/dataflows/{id}/series/{sid}/add(id=${dataflow.id},sid=${seriesId})}"
+                  hx-target="closest table" hx-swap="outerHTML">
+                <input type="hidden" name="asOf" th:value="${asOf}"/>
+                <input type="hidden" name="panelMode" th:value="${panelMode}"/>
+                <div class="form-control">
+                    <label class="label text-xs py-0">Time period</label>
+                    <input class="input input-bordered input-sm w-32" name="timePeriod" required autofocus
+                           th:value="${addPeriod}" placeholder="e.g. 2026-Q3"/>
+                </div>
+                <div th:each="m, it : ${measureColumns}" class="form-control">
+                    <label class="label text-xs py-0" th:title="${m.tooltip}" th:text="${m.header}"></label>
+                    <input class="input input-bordered input-sm w-36 text-right" required
+                           th:name="'measure_' + ${measureIds[it.index]}" th:value="${addValues != null} ? ${addValues[it.index]} : ''"/>
+                </div>
+                <div class="form-control">
+                    <label class="label text-xs py-0">Reason (optional)</label>
+                    <input class="input input-bordered input-sm w-64" name="comment" th:value="${addComment}" placeholder="e.g. late report"/>
+                </div>
+                <button class="btn btn-primary btn-sm" type="submit">Add in Alpha</button>
+                <button class="btn btn-sm" type="button"
+                        th:attr="hx-get=@{/explore/dataflows/{id}/series/{sid}/value-table(id=${dataflow.id},sid=${seriesId},stage='ALPHA',asOf=${asOf},panelMode=${panelMode})}"
+                        hx-target="closest table" hx-swap="outerHTML">Cancel</button>
+            </form>
+        </td>
+    </tr>
+    <tr th:if="${canEdit and !addRow}">
+        <td colspan="99" class="py-1">
+            <button type="button" class="btn btn-xs"
+                    th:attr="hx-get=@{/explore/dataflows/{id}/series/{sid}/add-value(id=${dataflow.id},sid=${seriesId},asOf=${asOf},panelMode=${panelMode})}"
+                    hx-target="closest table" hx-swap="outerHTML">+ Add period</button>
+        </td>
+    </tr>
     <th:block th:each="row : ${tableRows}">
+    <!-- delete one period, with a reason (#25) -->
+    <tr th:if="${deletePeriod != null and deletePeriod == row.timePeriod}" class="bg-error/10">
+        <td colspan="99">
+            <form class="flex flex-wrap items-end gap-3" method="post"
+                  th:action="@{/explore/dataflows/{id}/series/{sid}/delete(id=${dataflow.id},sid=${seriesId})}"
+                  th:attr="hx-post=@{/explore/dataflows/{id}/series/{sid}/delete(id=${dataflow.id},sid=${seriesId})}"
+                  hx-target="closest table" hx-swap="outerHTML">
+                <div class="font-semibold" th:text="'Delete ' + ${row.timePeriod} + ' (' + ${#strings.listJoin(row.values, ' / ')} + ')'"></div>
+                <input type="hidden" name="timePeriod" th:value="${row.timePeriod}"/>
+                <input type="hidden" name="asOf" th:value="${asOf}"/>
+                <input type="hidden" name="panelMode" th:value="${panelMode}"/>
+                <div class="form-control">
+                    <label class="label text-xs py-0">Reason (required)</label>
+                    <input class="input input-bordered input-sm w-72" name="reason" required autofocus placeholder="e.g. reported by mistake"/>
+                </div>
+                <button class="btn btn-error btn-sm" type="submit">Delete in Alpha</button>
+                <button class="btn btn-sm" type="button"
+                        th:attr="hx-get=@{/explore/dataflows/{id}/series/{sid}/value-table(id=${dataflow.id},sid=${seriesId},stage='ALPHA',asOf=${asOf},panelMode=${panelMode})}"
+                        hx-target="closest table" hx-swap="outerHTML">Cancel</button>
+            </form>
+        </td>
+    </tr>
     <tr th:if="${editPeriod != null and editPeriod == row.timePeriod}" class="bg-warning/10">
         <td colspan="99">
             <form class="flex flex-wrap items-end gap-3" method="post"
@@ -112,10 +177,10 @@
             </form>
         </td>
     </tr>
-    <tr th:unless="${editPeriod != null and editPeriod == row.timePeriod}"
-        th:classappend="${savedPeriod == row.timePeriod} ? 'bg-success/10'">
+    <tr th:unless="${editPeriod != null and editPeriod == row.timePeriod or deletePeriod != null and deletePeriod == row.timePeriod}"
+        th:classappend="${savedPeriod == row.timePeriod} ? 'bg-success/10' : (${row.deleted} ? 'opacity-60' : '')">
         <td th:text="${row.timePeriod}"></td>
-        <td th:each="v, it : ${row.values}" class="text-right tabular-nums"
+        <td th:each="v, it : ${row.values}" class="text-right tabular-nums" th:classappend="${row.deleted} ? 'line-through'"
             th:title="${measureColumns[it.index].tooltip}" th:text="${v}"></td>
         <td th:if="${asOf}" th:each="v, it : ${row.asOfValues}" class="text-right tabular-nums"
             th:classappend="${v != row.values[it.index]} ? 'text-warning font-semibold'"
@@ -140,13 +205,17 @@
         <td th:if="${stage == 'ALPHA'}" class="text-xs whitespace-nowrap">
             <span th:if="${row.pending == null}" class="opacity-50" title="same value as published">=</span>
             <span th:if="${row.pending == 'new'}" class="badge badge-sm badge-info" title="not yet published">new</span>
-            <span th:if="${row.pending != null and row.pending != 'new'}" class="badge badge-sm badge-warning"
+            <span th:if="${row.deleted}" class="badge badge-sm badge-error" title="deleted in Alpha, removed from Beta on promotion">deleted, still published</span>
+            <span th:if="${row.pending != null and row.pending != 'new' and !row.deleted}" class="badge badge-sm badge-warning"
                   th:title="'published value, replaced on promotion'" th:text="'pending, now ' + ${row.pending}"></span>
         </td>
         <td th:if="${canEdit}" class="whitespace-nowrap">
-            <a class="link link-primary text-sm" href="#"
+            <a class="link link-primary text-sm" href="#" th:title="${row.deleted} ? 'Restore: edit the published value and save it in Alpha again' : 'Correct the value'"
                th:attr="hx-get=@{/explore/dataflows/{id}/series/{sid}/edit-value(id=${dataflow.id},sid=${seriesId},timePeriod=${row.timePeriod},asOf=${asOf},panelMode=${panelMode})}"
-               hx-target="closest table" hx-swap="outerHTML">Edit</a>
+               hx-target="closest table" hx-swap="outerHTML" th:text="${row.deleted} ? 'Restore' : 'Edit'">Edit</a>
+            <a th:unless="${row.deleted}" class="link link-error text-sm ml-2" href="#" title="Delete this period (with a reason)"
+               th:attr="hx-get=@{/explore/dataflows/{id}/series/{sid}/delete-value(id=${dataflow.id},sid=${seriesId},timePeriod=${row.timePeriod},asOf=${asOf},panelMode=${panelMode})}"
+               hx-target="closest table" hx-swap="outerHTML">Delete</a>
             <span th:if="${savedPeriod == row.timePeriod}" class="text-xs text-success ml-1">saved</span>
         </td>
     </tr>

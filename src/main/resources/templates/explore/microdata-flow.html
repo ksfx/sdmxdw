@@ -95,7 +95,11 @@
 
     <!-- records -->
     <div class="card bg-base-100 shadow-xl p-6" th:if="${view == 'records'}">
-        <p class="text-sm opacity-70 mb-2" th:text="${#numbers.formatInteger(result.total, 1, 'COMMA')} + ' record(s)' + (${result.totalPages} > 1 ? ', page ' + (${result.page} + 1) + ' of ' + ${result.totalPages} : '')"></p>
+        <div class="flex justify-between items-center mb-2">
+            <p class="text-sm opacity-70" th:text="${#numbers.formatInteger(result.total, 1, 'COMMA')} + ' record(s)' + (${result.totalPages} > 1 ? ', page ' + (${result.page} + 1) + ' of ' + ${result.totalPages} : '')"></p>
+            <a th:if="${isDatenmanager}" class="btn btn-sm" title="Create a record in Alpha: a new entity, or an entity in another period"
+               th:href="@{/explore/microdata/{fid}/records/new(fid=${flow.id})}">+ New record</a>
+        </div>
         <div class="overflow-x-auto">
             <table class="table table-sm table-zebra">
                 <thead>
@@ -136,10 +140,11 @@
                            th:href="@{/explore/microdata/{fid}/records/{rid}(fid=${flow.id},rid=${row.recordId})}"></a></td>
                     <td th:text="${row.reportingPeriod}"></td>
                     <td class="text-sm">
-                        <span th:if="${row.changes == null}" class="badge badge-sm badge-info">new record</span>
+                        <span th:if="${row.deleted}" class="badge badge-sm badge-error">deleted</span>
+                        <span th:if="${row.changes == null and !row.deleted}" class="badge badge-sm badge-info">new record</span>
                         <span th:unless="${row.changes == null}" th:text="${row.changes}"></span>
                     </td>
-                    <td class="text-xs opacity-70 whitespace-nowrap" th:text="${#strings.substring(row.validFrom, 0, 16)} + ' · ' + ${row.recordedBy}"></td>
+                    <td class="text-xs opacity-70 whitespace-nowrap" th:text="${#strings.substring(row.validFrom, 0, 16)} + (${row.recordedBy} != null ? ' · ' + ${row.recordedBy} : '')"></td>
                     <td class="text-xs" th:text="${row.comment} ?: ''"></td>
                 </tr>
                 </tbody>

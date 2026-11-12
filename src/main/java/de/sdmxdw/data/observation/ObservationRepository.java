@@ -77,4 +77,27 @@ public interface ObservationRepository extends ListCrudRepository<Observation, L
       @Param("timePeriod") String timePeriod,
       @Param("stage") String stage,
       @Param("validTo") Instant validTo);
+
+  /** Deletes the current Alpha vintage (#25): closes it and notes who deleted it and why. */
+  @Modifying
+  @Query(
+      "UPDATE observation SET valid_to = :validTo, deleted_by = :deletedBy,"
+          + " delete_reason = :reason WHERE dataflow_id = :dataflowId AND series_id = :seriesId"
+          + " AND time_period = :timePeriod AND stage = 'ALPHA' AND valid_to IS NULL")
+  int deleteCurrentAlpha(
+      @Param("dataflowId") Long dataflowId,
+      @Param("seriesId") Long seriesId,
+      @Param("timePeriod") String timePeriod,
+      @Param("validTo") Instant validTo,
+      @Param("deletedBy") String deletedBy,
+      @Param("reason") String reason);
+
+  /** Promotion of deletions: closes current Beta vintages without a current Alpha vintage. */
+  @Modifying
+  @Query(
+      "UPDATE observation b SET valid_to = :validTo WHERE b.dataflow_id = :dataflowId"
+          + " AND b.stage = 'BETA' AND b.valid_to IS NULL AND NOT EXISTS (SELECT 1 FROM observation a"
+          + " WHERE a.dataflow_id = :dataflowId AND a.series_id = b.series_id"
+          + " AND a.time_period = b.time_period AND a.stage = 'ALPHA' AND a.valid_to IS NULL)")
+  int closeDeletedBeta(@Param("dataflowId") Long dataflowId, @Param("validTo") Instant validTo);
 }

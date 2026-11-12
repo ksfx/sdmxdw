@@ -134,21 +134,7 @@ public class ObservationService {
     if (!series.dataflowId().equals(dataflowId)) {
       throw new IllegalArgumentException("Series " + seriesId + " is not part of " + dataflowId);
     }
-    DataStructureDefinition dsd = dsdService.findById(dataflowService.findById(dataflowId).dsdId());
-    List<Dimension> keyDimensions =
-        dsd.dimensions().stream()
-            .filter(d -> d.dataType() != DataType.DATE)
-            .sorted(Comparator.comparingInt(Dimension::position))
-            .toList();
-    String[] keyValues = series.seriesKey().split("\\.", -1);
-    Map<Long, String> dimensionValues = new LinkedHashMap<>();
-    for (int i = 0; i < keyDimensions.size(); i++) {
-      dimensionValues.put(keyDimensions.get(i).id(), keyValues[i]);
-    }
-    dsd.dimensions().stream()
-        .filter(d -> d.dataType() == DataType.DATE)
-        .findFirst()
-        .ifPresent(d -> dimensionValues.put(d.id(), timePeriod));
+    Map<Long, String> dimensionValues = dimensionValues(dataflowId, series, timePeriod);
 
     String before =
         observationRepository
@@ -175,6 +161,165 @@ public class ObservationService {
             + corrected.measureValuesJson()
             + (reason == null ? "" : " (" + reason + ")"));
     return corrected;
+  }
+
+  /** The dimension values of one period of a series, by dimension id. */
+  private Map<Long, String> dimensionValues(Long dataflowId, Series series, String timePeriod) {
+    DataStructureDefinition dsd = dsdService.findById(dataflowService.findById(dataflowId).dsdId());
+    List<Dimension> keyDimensions =
+        dsd.dimensions().stream()
+            .filter(d -> d.dataType() != DataType.DATE)
+            .sorted(Comparator.comparingInt(Dimension::position))
+            .toList();
+    String[] keyValues = series.seriesKey().split("\\.", -1);
+    Map<Long, String> dimensionValues = new LinkedHashMap<>();
+    for (int i = 0; i < keyDimensions.size(); i++) {
+      dimensionValues.put(keyDimensions.get(i).id(), keyValues[i]);
+    }
+    dsd.dimensions().stream()
+        .filter(d -> d.dataType() == DataType.DATE)
+        .findFirst()
+        .ifPresent(d -> dimensionValues.put(d.id(), timePeriod));
+    return dimensionValues;
+  }
+
+  /**
+   * Adds a period to a series in the explorer (#25). Refused if the period has a current value
+   * already (that is a correction).
+   */
+  @PreAuthorize("hasRole('DATENMANAGER')")
+  @Transactional
+  public Observation addObservation(
+      Long dataflowId,
+      Long seriesId,
+      String timePeriod,
+      Map<Long, String> measureValuesByMeasureId,
+      String comment,
+      String performedBy) {
+    Series series = findSeriesById(seriesId);
+    if (!series.dataflowId().equals(dataflowId)) {
+      throw new IllegalArgumentException("Series " + seriesId + " is not part of " + dataflowId);
+    }
+    String period = timePeriod == null ? "" : timePeriod.strip();
+    return add(
+        dataflowId,
+        dimensionValues(dataflowId, series, period),
+        measureValuesByMeasureId,
+        comment,
+        performedBy);
+  }
+
+  /**
+   * Creates a series in the explorer (#25): its key and a first period. Refused if the series has a
+   * current value for that period already.
+   */
+  @PreAuthorize("hasRole('DATENMANAGER')")
+  @Transactional
+  public Observation createSeries(
+      Long dataflowId,
+      Map<Long, String> dimensionValuesByDimensionId,
+      Map<Long, String> measureValuesByMeasureId,
+      String comment,
+      String performedBy) {
+    return add(
+        dataflowId, dimensionValuesByDimensionId, measureValuesByMeasureId, comment, performedBy);
+  }
+
+  private Observation add(
+      Long dataflowId,
+      Map<Long, String> dimensionValues,
+      Map<Long, String> measureValues,
+      String comment,
+      String performedBy) {
+    String reason = comment == null || comment.isBlank() ? null : comment.strip();
+    String key = seriesKey(dataflowId, dimensionValues);
+    String period = timePeriod(dataflowId, dimensionValues);
+    seriesRepository
+        .findByDataflowIdAndSeriesKey(dataflowId, key)
+        .flatMap(
+            s ->
+                observationRepository.findCurrentOne(
+                    dataflowId, s.id(), period, ObservationStage.ALPHA.name()))
+        .ifPresent(
+            o -> {
+              throw new IllegalArgumentException(
+                  key + " " + period + " has a value already - edit it instead");
+            });
+    Observation added = record(dataflowId, dimensionValues, measureValues, performedBy, reason);
+    auditLogService.record(
+        dataflowId,
+        "ADD_OBSERVATION",
+        performedBy,
+        key
+            + " "
+            + period
+            + ": "
+            + added.measureValuesJson()
+            + (reason == null ? "" : " (" + reason + ")"));
+    return added;
+  }
+
+  /** The series key ("Q.DE.A") of dimension values; unvalidated, {@link #record} checks them. */
+  private String seriesKey(Long dataflowId, Map<Long, String> dimensionValues) {
+    DataStructureDefinition dsd = dsdService.findById(dataflowService.findById(dataflowId).dsdId());
+    return dsd.dimensions().stream()
+        .filter(d -> d.dataType() != DataType.DATE)
+        .sorted(Comparator.comparingInt(Dimension::position))
+        .map(d -> dimensionValues.getOrDefault(d.id(), ""))
+        .collect(java.util.stream.Collectors.joining("."));
+  }
+
+  private String timePeriod(Long dataflowId, Map<Long, String> dimensionValues) {
+    DataStructureDefinition dsd = dsdService.findById(dataflowService.findById(dataflowId).dsdId());
+    return dsd.dimensions().stream()
+        .filter(d -> d.dataType() == DataType.DATE)
+        .findFirst()
+        .map(d -> dimensionValues.getOrDefault(d.id(), ""))
+        .orElse("");
+  }
+
+  /**
+   * Deletes one observation (#25): closes its current Alpha vintage, notes who deleted it and why,
+   * and writes an audit entry. Nothing is removed - the history keeps every vintage. A published
+   * value stays in Beta until the next promotion, which closes it as well.
+   *
+   * @return whether the observation is published, i.e. the deletion is now a pending change
+   */
+  @PreAuthorize("hasRole('DATENMANAGER')")
+  @Transactional
+  public boolean deleteObservation(
+      Long dataflowId, Long seriesId, String timePeriod, String reason, String performedBy) {
+    Series series = findSeriesById(seriesId);
+    if (!series.dataflowId().equals(dataflowId)) {
+      throw new IllegalArgumentException("Series " + seriesId + " is not part of " + dataflowId);
+    }
+    if (reason == null || reason.isBlank()) {
+      throw new IllegalArgumentException("A reason is required to delete a value");
+    }
+    Observation current =
+        observationRepository
+            .findCurrentOne(dataflowId, seriesId, timePeriod, ObservationStage.ALPHA.name())
+            .orElseThrow(
+                () ->
+                    new IllegalArgumentException(
+                        "No current value " + series.seriesKey() + " " + timePeriod));
+    observationRepository.deleteCurrentAlpha(
+        dataflowId, seriesId, timePeriod, Instant.now(), performedBy, reason.strip());
+    auditLogService.record(
+        dataflowId,
+        "DELETE_OBSERVATION",
+        performedBy,
+        series.seriesKey()
+            + " "
+            + timePeriod
+            + ": "
+            + current.measureValuesJson()
+            + " ("
+            + reason.strip()
+            + ")");
+    return observationRepository
+        .findCurrentOne(dataflowId, seriesId, timePeriod, ObservationStage.BETA.name())
+        .isPresent();
   }
 
   @PreAuthorize("#stage.name() == 'BETA' or hasRole('DATENMANAGER')")
@@ -346,11 +491,27 @@ public class ObservationService {
       String keySearch,
       int page,
       int size) {
+    return findSeriesPage(dataflowId, stage, keyFilters, keySearch, null, page, size);
+  }
+
+  /**
+   * @param valuePeriod the period whose values are shown instead of the latest ones (null = latest)
+   *     - a cross-section over the series
+   */
+  @PreAuthorize("#stage.name() == 'BETA' or hasRole('DATENMANAGER')")
+  public SeriesPage findSeriesPage(
+      Long dataflowId,
+      ObservationStage stage,
+      Map<Integer, List<String>> keyFilters,
+      String keySearch,
+      String valuePeriod,
+      int page,
+      int size) {
     int safePage = Math.max(page, 0);
     long total = observationQueryRepository.countSeries(dataflowId, stage, keyFilters, keySearch);
     List<ObservationQueryRepository.SeriesSummary> rows =
         observationQueryRepository.findSeriesSummaries(
-            dataflowId, stage, keyFilters, keySearch, size, safePage * size);
+            dataflowId, stage, keyFilters, keySearch, valuePeriod, size, safePage * size);
     return new SeriesPage(rows, total, safePage, size);
   }
 
@@ -376,7 +537,7 @@ public class ObservationService {
     return facets;
   }
 
-  /** Alpha values a promotion would publish (new or changed compared to Beta). */
+  /** What a promotion would publish: new or changed Alpha values and deleted ones (#25). */
   @PreAuthorize("hasRole('DATENMANAGER')")
   public PendingPage findPendingChanges(
       Long dataflowId,
@@ -501,12 +662,18 @@ public class ObservationService {
               alpha.comment()));
       promoted++;
     }
+    // deleted in Alpha (#25): Beta vintages without a current Alpha vintage
+    int deleted = observationRepository.closeDeletedBeta(dataflowId, now);
     auditLogService.record(
         dataflowId,
         "PROMOTE_ALPHA_TO_BETA",
         performedBy,
-        promoted + " promoted, " + unchanged + " unchanged");
-    return new PromotionResult(promoted, unchanged);
+        promoted
+            + " promoted, "
+            + unchanged
+            + " unchanged"
+            + (deleted > 0 ? ", " + deleted + " deleted" : ""));
+    return new PromotionResult(promoted, unchanged, deleted);
   }
 
   private void requireValidCode(Long codelistId, String code) {
@@ -527,5 +694,5 @@ public class ObservationService {
     }
   }
 
-  public record PromotionResult(int promoted, int unchanged) {}
+  public record PromotionResult(int promoted, int unchanged, int deleted) {}
 }

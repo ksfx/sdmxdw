@@ -205,6 +205,80 @@ class ExploreMicrodataFlowPageTest extends AbstractIntegrationTest {
   }
 
   @Test
+  void datenmanagerCreatesCopiesAndDeletesRecords() throws Exception {
+    MicrodataFlow flow = flow();
+    String base = "/explore/microdata/" + flow.id();
+
+    assertThat(body(get(base).param("stage", "ALPHA").with(dm))).contains("+ New record");
+    assertThat(body(get(base).with(oekonom))).doesNotContain("+ New record");
+    assertThat(body(get(base + "/records/new").with(dm)))
+        .contains("New record")
+        .contains("name=\"entityId\"")
+        .contains("name=\"v.AMOUNT\"");
+
+    // invalid: the form comes back with the message and the entered values
+    assertThat(
+            body(
+                post(base + "/records/create")
+                    .param("entityId", "L-9")
+                    .param("reportingPeriod", "2026-Q3")
+                    .param("v.CURRENCY", "CHF")
+                    .with(dm)
+                    .with(csrf())))
+        .contains("Missing required field AMOUNT")
+        .contains("value=\"L-9\"");
+    String location =
+        mvc.perform(
+                post(base + "/records/create")
+                    .param("entityId", "L-9")
+                    .param("reportingPeriod", "2026-Q3")
+                    .param("v.CURRENCY", "CHF")
+                    .param("v.AMOUNT", "900")
+                    .with(dm)
+                    .with(csrf()))
+            .andExpect(status().is3xxRedirection())
+            .andReturn()
+            .getResponse()
+            .getRedirectedUrl();
+    assertThat(body(get(location).with(dm)))
+        .contains("L-9")
+        .contains("Copy to new period")
+        .contains("delete-record");
+
+    // copy to a new period: entity and values prefilled, period empty
+    MicrodataRecord l1 = current(flow, "L-1", MicrodataStage.ALPHA);
+    assertThat(body(get(base + "/records/new").param("from", l1.id().toString()).with(dm)))
+        .contains("Copy to a new period")
+        .contains("value=\"L-1\"")
+        .contains("value=\"100\"");
+
+    // delete with a reason: pending until promotion, gone from Beta afterwards
+    mvc.perform(post(base + "/records/" + l1.id() + "/delete").with(dm).with(csrf()))
+        .andExpect(
+            result ->
+                assertThat(result.getFlashMap().get("error").toString())
+                    .contains("reason is required"));
+    mvc.perform(
+            post(base + "/records/" + l1.id() + "/delete")
+                .param("reason", "reported twice")
+                .with(dm)
+                .with(csrf()))
+        .andExpect(
+            result ->
+                assertThat(result.getFlashMap().get("flash").toString())
+                    .contains("still published until the next promotion"));
+    assertThat(body(get(base).param("view", "pending").with(dm)))
+        .contains(">deleted</span>")
+        .contains("reported twice");
+    assertThat(body(get(base + "/records/" + l1.id()).with(dm)))
+        .contains("Deleted ")
+        .contains("reported twice");
+    mvc.perform(post(base + "/promote").with(dm).with(csrf()))
+        .andExpect(status().is3xxRedirection());
+    assertThat(body(get(base).with(oekonom))).doesNotContain(">L-1<").contains(">L-9<");
+  }
+
+  @Test
   void documentationIsShownToEveryoneAndEditedByDatenmanager() throws Exception {
     MicrodataFlow flow = flow();
     String base = "/explore/microdata/" + flow.id();

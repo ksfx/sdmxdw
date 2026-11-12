@@ -21,7 +21,6 @@ import de.sdmxdw.web.KeyFilters;
 import de.sdmxdw.web.Roles;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -60,7 +59,6 @@ public class ExploreDataflowController {
   /** Tabs of the dataflow page; pending and activity are for Datenmanager only. */
   enum View {
     series,
-    observations,
     pending,
     activity
   }
@@ -95,8 +93,7 @@ public class ExploreDataflowController {
       @RequestParam(required = false) String view,
       @RequestParam(required = false) String stage,
       @RequestParam(required = false) String q,
-      @RequestParam(required = false) String from,
-      @RequestParam(required = false) String to,
+      @RequestParam(required = false) String period,
       @RequestParam(defaultValue = "0") int page,
       @RequestParam MultiValueMap<String, String> params,
       Model model) {
@@ -131,8 +128,6 @@ public class ExploreDataflowController {
     model.addAttribute("keyDimensionOrder", String.join(".", ctx.keyCodes()));
     model.addAttribute("filters", selection.filters());
     model.addAttribute("query", q);
-    model.addAttribute("from", from);
-    model.addAttribute("to", to);
     // facets of the stage that is shown (pending changes are Alpha observations)
     ObservationStage facetStage =
         selectedView == View.pending ? ObservationStage.ALPHA : selectedStage;
@@ -158,40 +153,21 @@ public class ExploreDataflowController {
 
     switch (selectedView) {
       case series -> {
+        String valuePeriod = period == null || period.isBlank() ? null : period.strip();
         ObservationService.SeriesPage result =
             observationService.findSeriesPage(
-                dataflowId, selectedStage, selection.codesByPosition(), q, page, PAGE_SIZE);
-        model.addAttribute("result", result);
-        model.addAttribute("rows", ctx.seriesRows(result));
-      }
-      case observations -> {
-        ObservationService.ObservationPage result =
-            observationService.findCurrentPage(
                 dataflowId,
-                EnumSet.of(selectedStage),
+                selectedStage,
                 selection.codesByPosition(),
-                from,
-                to,
                 q,
+                valuePeriod,
                 page,
                 PAGE_SIZE);
         model.addAttribute("result", result);
-        model.addAttribute(
-            "rows",
-            result.rows().stream()
-                .map(
-                    r ->
-                        ctx.dataRow(
-                            r.seriesId(),
-                            r.seriesKey(),
-                            r.timePeriod(),
-                            r.measureValuesJson(),
-                            r.stage(),
-                            r.validFrom().toString(),
-                            r.recordedBy()))
-                .toList());
-        rowModel(model, ctx, selectedStage == ObservationStage.ALPHA && dm);
+        model.addAttribute("rows", ctx.seriesRows(result));
+        model.addAttribute("period", valuePeriod);
         if (dm) {
+          // "New series": key, first period and values (#25)
           model.addAttribute("keyDimensionFields", ctx.dimensionFields(false));
           model.addAttribute("timeDimensionFields", ctx.dimensionFields(true));
           model.addAttribute("measureFields", ctx.measureFields());
@@ -224,6 +200,7 @@ public class ExploreDataflowController {
         result.promoted()
             + " observation(s) published to Beta"
             + (result.unchanged() > 0 ? ", " + result.unchanged() + " unchanged" : "")
+            + (result.deleted() > 0 ? ", " + result.deleted() + " deleted" : "")
             + ".");
     return "redirect:/explore/dataflows/" + dataflowId + "?view=pending";
   }
@@ -306,68 +283,13 @@ public class ExploreDataflowController {
     return new Facets.Response(total, dimensions);
   }
 
-  // --- observation table: inline correction, recording, history ---------------------------------
+  // --- new series (#25) ------------------------------------------------------------------------
 
-  /** Current row as htmx fragment (used by "Cancel" of the inline editor). */
-  @GetMapping("/observations/row")
-  public String row(
+  /** Creates a series with its first period in Alpha and opens it. */
+  @PostMapping("/series")
+  public String createSeries(
       @PathVariable Long dataflowId,
-      @RequestParam Long seriesId,
-      @RequestParam String timePeriod,
-      @RequestParam ObservationStage stage,
-      Model model) {
-    Context ctx = context(dataflowId);
-    Observation o =
-        observationService.findCurrentOne(dataflowId, seriesId, timePeriod, stage).orElseThrow();
-    rowModel(model, ctx, stage == ObservationStage.ALPHA && Roles.isDatenmanager());
-    model.addAttribute("row", ctx.dataRow(o, seriesKey(o)));
-    return "explore/fragments/observation-row :: row";
-  }
-
-  /** Inline editor: dimensions fixed, measure values pre-filled, optional reason. */
-  @GetMapping("/observations/edit")
-  public String edit(
-      @PathVariable Long dataflowId,
-      @RequestParam Long seriesId,
-      @RequestParam String timePeriod,
-      Model model) {
-    Context ctx = context(dataflowId);
-    Observation o =
-        observationService
-            .findCurrentOne(dataflowId, seriesId, timePeriod, ObservationStage.ALPHA)
-            .orElseThrow();
-    rowModel(model, ctx, true);
-    model.addAttribute("row", ctx.dataRow(o, seriesKey(o)));
-    return "explore/fragments/observation-row :: editRow";
-  }
-
-  @PostMapping("/observations/correct")
-  public String correct(
-      @PathVariable Long dataflowId,
-      @RequestParam Long seriesId,
-      @RequestParam String timePeriod,
       @RequestParam(required = false) String comment,
-      @RequestParam Map<String, String> allParams,
-      Model model,
-      Authentication authentication) {
-    Observation corrected =
-        observationService.correctObservation(
-            dataflowId,
-            seriesId,
-            timePeriod,
-            measureValues(allParams),
-            comment,
-            authentication.getName());
-    Context ctx = context(dataflowId);
-    rowModel(model, ctx, true);
-    model.addAttribute("row", ctx.dataRow(corrected, seriesKey(corrected)));
-    model.addAttribute("justCorrected", true);
-    return "explore/fragments/observation-row :: row";
-  }
-
-  @PostMapping("/observations")
-  public String record(
-      @PathVariable Long dataflowId,
       @RequestParam Map<String, String> allParams,
       Authentication authentication,
       RedirectAttributes redirectAttributes) {
@@ -378,52 +300,28 @@ public class ExploreDataflowController {
             dimensionValues.put(Long.valueOf(key.substring(4)), value);
           }
         });
-    observationService.recordObservation(
-        dataflowId, dimensionValues, measureValues(allParams), authentication.getName());
-    redirectAttributes.addFlashAttribute("flash", "Observation recorded in Alpha.");
-    return "redirect:/explore/dataflows/" + dataflowId + "?view=observations&stage=ALPHA";
-  }
-
-  @GetMapping("/observations/history")
-  public String history(
-      @PathVariable Long dataflowId,
-      @RequestParam Long seriesId,
-      @RequestParam String timePeriod,
-      @RequestParam ObservationStage stage,
-      Model model) {
-    Context ctx = context(dataflowId);
-    List<HistoryRow> rows =
-        observationService.findHistory(seriesId, timePeriod, stage).stream()
-            .map(
-                o ->
-                    new HistoryRow(
-                        ctx.measuresLabel(o.measureValuesJson()),
-                        o.validFrom().toString(),
-                        o.validTo() == null ? "(current)" : o.validTo().toString(),
-                        o.recordedBy(),
-                        o.comment()))
-            .toList();
-    model.addAttribute("dataflow", ctx.dataflow());
-    model.addAttribute("seriesKey", observationService.findSeriesById(seriesId).seriesKey());
-    model.addAttribute("timePeriod", timePeriod);
-    model.addAttribute("stage", stage);
-    model.addAttribute("rows", rows);
-    return "explore/observation-history";
+    try {
+      Observation created =
+          observationService.createSeries(
+              dataflowId,
+              dimensionValues,
+              measureValues(allParams),
+              comment,
+              authentication.getName());
+      redirectAttributes.addFlashAttribute(
+          "flash", "Saved in Alpha - published with the next promotion.");
+      return "redirect:/explore/dataflows/"
+          + dataflowId
+          + "/series/"
+          + created.seriesId()
+          + "?stage=ALPHA";
+    } catch (IllegalArgumentException e) {
+      redirectAttributes.addFlashAttribute("error", e.getMessage());
+      return "redirect:/explore/dataflows/" + dataflowId + "?stage=ALPHA";
+    }
   }
 
   // --- helpers ---------------------------------------------------------------------------------
-
-  private void rowModel(Model model, Context ctx, boolean editable) {
-    model.addAttribute("dataflow", ctx.dataflow());
-    model.addAttribute("measureColumns", ctx.measureColumns());
-    model.addAttribute("measureIds", ctx.measures().stream().map(Measure::id).toList());
-    model.addAttribute("editable", editable);
-    model.addAttribute("columnCount", ctx.keyDimensions().size() + ctx.measures().size() + 3);
-  }
-
-  private String seriesKey(Observation o) {
-    return observationService.findSeriesById(o.seriesId()).seriesKey();
-  }
 
   private static Map<Long, String> measureValues(Map<String, String> params) {
     Map<Long, String> values = new HashMap<>();
@@ -576,38 +474,10 @@ public class ExploreDataflowController {
                       r.firstPeriod(),
                       r.lastPeriod(),
                       r.count(),
-                      measuresLabel(r.latestMeasureValuesJson())))
+                      r.latestMeasureValuesJson() == null
+                          ? null
+                          : measuresLabel(r.latestMeasureValuesJson())))
           .toList();
-    }
-
-    DataRow dataRow(Observation o, String seriesKey) {
-      return dataRow(
-          o.seriesId(),
-          seriesKey,
-          o.timePeriod(),
-          o.measureValuesJson(),
-          o.stage(),
-          o.validFrom().toString(),
-          o.recordedBy());
-    }
-
-    DataRow dataRow(
-        Long seriesId,
-        String seriesKey,
-        String timePeriod,
-        String measureValuesJson,
-        ObservationStage stage,
-        String validFrom,
-        String recordedBy) {
-      return new DataRow(
-          seriesId,
-          seriesKey,
-          keyCells(seriesKey),
-          timePeriod,
-          values(parser.apply(measureValuesJson)),
-          stage,
-          validFrom,
-          recordedBy);
     }
 
     PendingRow pendingRow(PendingChange p) {
@@ -619,7 +489,7 @@ public class ExploreDataflowController {
           p.betaMeasureValuesJson() == null
               ? null
               : values(parser.apply(p.betaMeasureValuesJson())),
-          values(parser.apply(p.alphaMeasureValuesJson())),
+          p.deleted() ? null : values(parser.apply(p.alphaMeasureValuesJson())),
           p.validFrom().toString(),
           p.recordedBy(),
           p.comment());
@@ -686,18 +556,9 @@ public class ExploreDataflowController {
 
   public record MeasureColumn(String code, String label) {}
 
-  public record DataRow(
-      Long seriesId,
-      String seriesKey,
-      List<CodeCell> key,
-      String timePeriod,
-      List<String> values,
-      ObservationStage stage,
-      String validFrom,
-      String recordedBy) {}
-
   /**
    * @param betaValues null = new, never published
+   * @param alphaValues null = deleted in Alpha (#25)
    */
   public record PendingRow(
       Long seriesId,
@@ -708,10 +569,12 @@ public class ExploreDataflowController {
       List<String> alphaValues,
       String validFrom,
       String recordedBy,
-      String comment) {}
+      String comment) {
 
-  public record HistoryRow(
-      String measuresLabel, String validFrom, String validTo, String recordedBy, String comment) {}
+    public boolean deleted() {
+      return alphaValues == null;
+    }
+  }
 
   public record DimensionField(
       Long id,

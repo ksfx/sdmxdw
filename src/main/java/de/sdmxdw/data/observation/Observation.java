@@ -15,7 +15,14 @@ public record Observation(
     Instant validFrom,
     Instant validTo,
     String recordedBy,
-    String comment) {
+    String comment,
+    String deletedBy,
+    String deleteReason) {
+
+  /** Closed by a deletion (#25), not replaced by a later vintage. */
+  public boolean deleted() {
+    return deletedBy != null;
+  }
 
   public static Observation createNew(
       Long dataflowId,
@@ -48,7 +55,9 @@ public record Observation(
         validFrom,
         null,
         recordedBy,
-        comment);
+        comment,
+        null,
+        null);
   }
 
   public Observation withValidTo(Instant newValidTo) {
@@ -62,6 +71,8 @@ public record Observation(
         validFrom,
         newValidTo,
         recordedBy,
-        comment);
+        comment,
+        deletedBy,
+        deleteReason);
   }
 }

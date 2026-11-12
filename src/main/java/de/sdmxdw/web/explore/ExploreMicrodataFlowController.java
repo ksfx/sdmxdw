@@ -254,6 +254,7 @@ public class ExploreMicrodataFlowController {
         result.promoted()
             + " record(s) published to Beta"
             + (result.unchanged() > 0 ? ", " + result.unchanged() + " unchanged" : "")
+            + (result.deleted() > 0 ? ", " + result.deleted() + " deleted" : "")
             + ".");
     return "redirect:/explore/microdata/" + flowId + "?view=pending";
   }
@@ -456,6 +457,99 @@ public class ExploreMicrodataFlowController {
     }
   }
 
+  /**
+   * Form for a new record (#25); {@code from} prefills it from an existing record ("copy to new
+   * period": same entity and values, period empty).
+   */
+  @GetMapping("/records/new")
+  public String newRecordForm(
+      @PathVariable Long flowId, @RequestParam(required = false) Long from, Model model) {
+    Map<String, String> scalars = Map.of();
+    Map<String, List<Map<String, String>>> groups = Map.of();
+    String entityId = null;
+    if (from != null) {
+      MicrodataRecord source = loadRecord(flowId, from);
+      MicrodataPayload payload = recordService.parsePayload(source.payloadJson());
+      scalars = payload.scalars();
+      groups = payload.groups();
+      entityId = source.entityId();
+    }
+    editModel(model, flowId, null, scalars, groups, null, null);
+    model.addAttribute("entityId", entityId);
+    model.addAttribute("reportingPeriod", null);
+    model.addAttribute("copiedFrom", from);
+    return "explore/microdata-record-edit";
+  }
+
+  @PostMapping("/records/create")
+  public String createRecord(
+      @PathVariable Long flowId,
+      @RequestParam(required = false) String entityId,
+      @RequestParam(required = false) String reportingPeriod,
+      @RequestParam(required = false) String comment,
+      @RequestParam(required = false) Long copiedFrom,
+      @RequestParam Map<String, String> params,
+      Authentication authentication,
+      Model model,
+      RedirectAttributes redirect) {
+    List<FieldDefinition> fields = sortedFields(flowId);
+    Map<String, String> scalars = new LinkedHashMap<>();
+    Map<String, List<Map<String, String>>> groups = new LinkedHashMap<>();
+    parseForm(fields, params, scalars, groups);
+    try {
+      MicrodataRecord saved =
+          recordService.createRecord(
+              flowId,
+              entityId,
+              reportingPeriod,
+              scalars,
+              groups,
+              comment,
+              authentication.getName());
+      redirect.addFlashAttribute("flash", "Saved in Alpha - published with the next promotion.");
+      return "redirect:/explore/microdata/" + flowId + "/records/" + saved.id();
+    } catch (IllegalArgumentException e) {
+      editModel(model, flowId, null, scalars, groups, comment, e.getMessage());
+      model.addAttribute("entityId", entityId);
+      model.addAttribute("reportingPeriod", reportingPeriod);
+      model.addAttribute("copiedFrom", copiedFrom);
+      return "explore/microdata-record-edit";
+    }
+  }
+
+  /** Deletes the current Alpha record, with a reason (#25). */
+  @PostMapping("/records/{recordId}/delete")
+  public String deleteRecord(
+      @PathVariable Long flowId,
+      @PathVariable Long recordId,
+      @RequestParam(required = false) String reason,
+      Authentication authentication,
+      RedirectAttributes redirect) {
+    MicrodataRecord record = loadRecord(flowId, recordId);
+    try {
+      boolean published =
+          recordService.deleteRecord(
+              flowId,
+              record.entityId(),
+              record.reportingPeriod(),
+              reason,
+              authentication.getName());
+      redirect.addFlashAttribute(
+          "flash",
+          record.entityId()
+              + " @ "
+              + record.reportingPeriod()
+              + " deleted"
+              + (published
+                  ? " - still published until the next promotion (see pending changes)."
+                  : "."));
+      return "redirect:/explore/microdata/" + flowId + "?stage=ALPHA";
+    } catch (IllegalArgumentException e) {
+      redirect.addFlashAttribute("error", e.getMessage());
+      return "redirect:/explore/microdata/" + flowId + "/records/" + recordId;
+    }
+  }
+
   // --- helpers ---------------------------------------------------------------------------------
 
   private MicrodataRecord loadRecord(Long flowId, Long recordId) {
@@ -639,6 +733,17 @@ public class ExploreMicrodataFlowController {
 
   private PendingRow pendingRow(PendingRecord p) {
     MicrodataRecord a = p.alpha();
+    if (p.deleted()) {
+      return new PendingRow(
+          a.id(),
+          a.entityId(),
+          a.reportingPeriod(),
+          null,
+          a.validTo().toString(),
+          a.deletedBy(),
+          a.deleteReason(),
+          true);
+    }
     return new PendingRow(
         a.id(),
         a.entityId(),
@@ -650,7 +755,8 @@ public class ExploreMicrodataFlowController {
                 recordService.parsePayload(a.payloadJson())),
         a.validFrom().toString(),
         a.recordedBy(),
-        a.comment());
+        a.comment(),
+        false);
   }
 
   private List<GroupSection> groupSections(
@@ -747,6 +853,10 @@ public class ExploreMicrodataFlowController {
   /**
    * @param changes null = new record, never published
    */
+  /**
+   * @param changes null = new record, never published (or deleted)
+   * @param deleted deleted in Alpha (#25); validFrom and recordedBy are when and by whom
+   */
   public record PendingRow(
       Long recordId,
       String entityId,
@@ -754,7 +864,8 @@ public class ExploreMicrodataFlowController {
       String changes,
       String validFrom,
       String recordedBy,
-      String comment) {}
+      String comment,
+      boolean deleted) {}
 
   public record EditField(
       String code,

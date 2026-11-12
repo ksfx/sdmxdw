@@ -19,7 +19,14 @@ public record MicrodataRecord(
     Instant validFrom,
     Instant validTo,
     String recordedBy,
-    String comment) {
+    String comment,
+    String deletedBy,
+    String deleteReason) {
+
+  /** Closed by a deletion (#25), not replaced by a later vintage. */
+  public boolean deleted() {
+    return deletedBy != null;
+  }
 
   public static MicrodataRecord createNew(
       Long microdataFlowId,
@@ -78,6 +85,8 @@ public record MicrodataRecord(
         validFrom,
         null,
         recordedBy,
-        comment);
+        comment,
+        null,
+        null);
   }
 }

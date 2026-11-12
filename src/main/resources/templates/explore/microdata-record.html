@@ -22,7 +22,8 @@
                     Reporting period <b th:text="${record.reportingPeriod}"></b>
                     <span class="badge badge-sm ml-2" th:classappend="${alpha} ? 'badge-warning' : 'badge-primary'"
                           th:text="${alpha} ? 'Unpublished (Alpha)' : 'Published (Beta)'"></span>
-                    <span th:if="${record.validTo != null}" class="badge badge-sm badge-ghost ml-1">superseded version</span>
+                    <span th:if="${record.validTo != null and !record.deleted}" class="badge badge-sm badge-ghost ml-1">superseded version</span>
+                    <span th:if="${record.deleted}" class="badge badge-sm badge-error ml-1">deleted</span>
                     <span th:if="${unpublished}" class="badge badge-sm badge-info ml-1">never published</span>
                 </p>
                 <p class="text-xs opacity-60 mt-1">
@@ -34,11 +35,21 @@
                 <a th:if="${otherStageRecordId}" class="btn btn-sm"
                    th:href="@{/explore/microdata/{fid}/records/{rid}(fid=${flow.id},rid=${otherStageRecordId})}"
                    th:text="${alpha} ? 'Show published (Beta)' : 'Show unpublished (Alpha)'"></a>
-                <a th:if="${canEdit}" class="btn btn-sm btn-primary"
-                   th:href="@{/explore/microdata/{fid}/records/{rid}/edit(fid=${flow.id},rid=${record.id})}">Edit</a>
+                <div th:if="${canEdit}" class="flex gap-2">
+                    <a class="btn btn-sm btn-primary"
+                       th:href="@{/explore/microdata/{fid}/records/{rid}/edit(fid=${flow.id},rid=${record.id})}">Edit</a>
+                    <a class="btn btn-sm" title="New record of this entity in another period, prefilled with these values"
+                       th:href="@{/explore/microdata/{fid}/records/new(fid=${flow.id},from=${record.id})}">Copy to new period</a>
+                    <button class="btn btn-sm btn-outline btn-error" type="button"
+                            onclick="document.getElementById('delete-record').showModal()">Delete</button>
+                </div>
             </div>
         </div>
         <div th:if="${flash}" class="alert alert-success mt-4 py-2"><span th:text="${flash}"></span></div>
+        <div th:if="${error}" class="alert alert-error mt-4 py-2"><span th:text="${error}"></span></div>
+        <div th:if="${record.deleted}" class="alert alert-error mt-4 py-2">
+            <span th:text="'Deleted ' + ${#temporals.format(record.validTo, 'yyyy-MM-dd HH:mm')} + ' by ' + ${record.deletedBy} + ': ' + ${record.deleteReason}"></span>
+        </div>
     </div>
 
     <div class="card bg-base-100 shadow-xl p-6">
@@ -89,9 +100,12 @@
             <tbody>
             <tr th:each="h : ${history}" th:classappend="${h.id == record.id} ? 'bg-base-200'">
                 <td th:text="${#temporals.format(h.validFrom, 'yyyy-MM-dd HH:mm:ss')}"></td>
-                <td th:text="${h.validTo} == null ? 'current' : ${#temporals.format(h.validTo, 'yyyy-MM-dd HH:mm:ss')}"></td>
+                <td>
+                    <span th:text="${h.validTo} == null ? 'current' : ${#temporals.format(h.validTo, 'yyyy-MM-dd HH:mm:ss')}"></span>
+                    <span th:if="${h.deleted}" class="badge badge-sm badge-error ml-1" th:title="'deleted by ' + ${h.deletedBy}">deleted</span>
+                </td>
                 <td th:text="${h.recordedBy}"></td>
-                <td th:text="${h.comment} ?: ''"></td>
+                <td th:text="${h.deleted} ? ${h.deleteReason} : (${h.comment} ?: '')"></td>
                 <td><a th:if="${h.id != record.id}" class="link link-primary text-sm"
                        th:href="@{/explore/microdata/{fid}/records/{rid}(fid=${flow.id},rid=${h.id})}">show</a></td>
             </tr>
@@ -99,5 +113,18 @@
         </table>
     </div>
 </div>
+<dialog id="delete-record" class="modal" th:if="${canEdit}">
+    <form method="post" class="modal-box space-y-3"
+          th:action="@{/explore/microdata/{fid}/records/{rid}/delete(fid=${flow.id},rid=${record.id})}">
+        <h3 class="font-bold text-lg" th:text="'Delete ' + ${record.entityId} + ' @ ' + ${record.reportingPeriod} + '?'"></h3>
+        <p class="text-sm">The record is closed in <b>Alpha</b>; nothing is removed, its history stays.
+            <span th:unless="${unpublished}">It stays published until the next promotion, which removes it from Beta as well.</span></p>
+        <input class="input input-bordered w-full" name="reason" required placeholder="Reason (required), e.g. reported by mistake"/>
+        <div class="modal-action">
+            <button type="button" class="btn" onclick="this.closest('dialog').close()">Cancel</button>
+            <button class="btn btn-error" type="submit">Delete in Alpha</button>
+        </div>
+    </form>
+</dialog>
 </body>
 </html>

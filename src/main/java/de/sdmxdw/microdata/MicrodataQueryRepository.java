@@ -237,27 +237,34 @@ public class MicrodataQueryRepository {
   }
 
   /**
-   * Current Alpha records whose payload differs from the current Beta record (or that have none):
-   * what {@code MicrodataRecordService.promoteToBeta} would publish. Read from the table {@code
-   * microdata_pending} maintained on write (V19); only the shown page is joined with the records.
+   * What {@code MicrodataRecordService.promoteToBeta} would publish: current Alpha records whose
+   * payload differs from the current Beta record (or that have none), and published records deleted
+   * in Alpha (#25). Read from the table {@code microdata_pending} maintained on write (V19, V20);
+   * only the shown page is joined with the records.
    */
   public List<PendingRecord> findPending(
       MicrodataQuery query, Map<String, FacetSlot> facetByField, int limit, int offset) {
     MapSqlParameterSource params = new MapSqlParameterSource();
     String sql =
-        "SELECT a.*, b.payload_json AS beta_payload FROM microdata_record a JOIN ("
+        "SELECT a.*, b.payload_json AS beta_payload, page.deleted FROM ("
             + pendingKeys(query, facetByField, params)
             + " ORDER BY p.reporting_period, p.entity_id LIMIT :limit OFFSET :offset) page"
-            // flow and period select the partition of each record (V19)
-            + " ON page.record_id = a.id AND a.microdata_flow_id = :flowId"
-            + " AND a.reporting_period = page.reporting_period"
+            // the pending Alpha record, or for a deletion the deleted Alpha vintage; flow and
+            // period select the partition (V19)
+            + " JOIN LATERAL (SELECT * FROM microdata_record r WHERE r.microdata_flow_id = :flowId"
+            + " AND r.reporting_period = page.reporting_period AND (NOT page.deleted"
+            + " AND r.id = page.record_id OR page.deleted AND r.entity_id = page.entity_id"
+            + " AND r.stage = 'ALPHA') ORDER BY r.valid_to DESC NULLS FIRST LIMIT 1) a ON true"
             + " LEFT JOIN microdata_record b ON b.microdata_flow_id = a.microdata_flow_id"
             + " AND b.entity_id = a.entity_id AND b.reporting_period = a.reporting_period"
             + " AND b.stage = 'BETA' AND b.valid_to IS NULL"
             + " ORDER BY a.reporting_period, a.entity_id";
     params.addValue("limit", limit).addValue("offset", offset);
     return jdbc.query(
-        sql, params, (rs, i) -> new PendingRecord(map(rs), rs.getString("beta_payload")));
+        sql,
+        params,
+        (rs, i) ->
+            new PendingRecord(map(rs), rs.getString("beta_payload"), rs.getBoolean("deleted")));
   }
 
   public long countPending(MicrodataQuery query, Map<String, FacetSlot> facetByField) {
@@ -278,8 +285,8 @@ public class MicrodataQueryRepository {
       MicrodataQuery query, Map<String, FacetSlot> facetByField, MapSqlParameterSource params) {
     StringBuilder sql =
         new StringBuilder(
-            "SELECT p.record_id, p.reporting_period, p.entity_id FROM microdata_pending p"
-                + " WHERE p.microdata_flow_id = :flowId");
+            "SELECT p.record_id, p.reporting_period, p.entity_id, p.deleted"
+                + " FROM microdata_pending p WHERE p.microdata_flow_id = :flowId");
     params.addValue("flowId", query.flowId());
     if (!query.reportingPeriods().isEmpty()) {
       sql.append(" AND p.reporting_period IN (:periods)");
@@ -291,8 +298,11 @@ public class MicrodataQueryRepository {
             || query.freeText() != null && !query.freeText().isBlank();
     if (filtered) {
       MapSqlParameterSource inner = new MapSqlParameterSource();
+      // pending changes point at Alpha records, pending deletions at the Beta record they close
       sql.append(" AND p.record_id IN (SELECT id FROM microdata_record")
-          .append(where(query.withStage(MicrodataStage.ALPHA), facetByField, inner))
+          .append(
+              where(query.withStage(MicrodataStage.ALPHA), facetByField, inner)
+                  .replace("stage = :stage", "stage IN ('ALPHA', 'BETA')"))
           .append(')');
       for (String name : inner.getParameterNames()) {
         params.addValue(name, inner.getValue(name));
@@ -302,9 +312,11 @@ public class MicrodataQueryRepository {
   }
 
   /**
+   * @param alpha the pending Alpha record; for a deletion the deleted Alpha vintage
    * @param betaPayloadJson null = new record, never published
+   * @param deleted deleted in Alpha (#25): the promotion closes the Beta record
    */
-  public record PendingRecord(MicrodataRecord alpha, String betaPayloadJson) {}
+  public record PendingRecord(MicrodataRecord alpha, String betaPayloadJson, boolean deleted) {}
 
   static MicrodataRecord map(ResultSet rs) throws SQLException {
     Timestamp validTo = rs.getTimestamp("valid_to");
@@ -322,7 +334,9 @@ public class MicrodataQueryRepository {
         rs.getTimestamp("valid_from").toInstant(),
         validTo == null ? null : validTo.toInstant(),
         rs.getString("recorded_by"),
-        rs.getString("comment"));
+        rs.getString("comment"),
+        rs.getString("deleted_by"),
+        rs.getString("delete_reason"));
   }
 
   /**
@@ -330,7 +344,7 @@ public class MicrodataQueryRepository {
    * vintage has the same payload stay, changed Beta vintages are closed, and the Alpha records
    * without an equal Beta vintage are inserted as new Beta vintages.
    *
-   * @return {promoted, unchanged}
+   * @return {promoted, unchanged, deleted}
    */
   public int[] promoteAll(Long flowId, Timestamp now, String recordedBy) {
     MapSqlParameterSource p =
@@ -370,9 +384,59 @@ public class MicrodataQueryRepository {
                 + current
                 + ")",
             p);
+    // deleted in Alpha (#25): close the Beta records of the pending deletions
+    int deleted =
+        jdbc.update(
+            "UPDATE microdata_record b SET valid_to = :now FROM microdata_pending p"
+                + " WHERE p.microdata_flow_id = :flow AND p.deleted AND b.microdata_flow_id = :flow"
+                + " AND b.reporting_period = p.reporting_period AND b.id = p.record_id"
+                + " AND b.valid_to IS NULL",
+            p);
     // every current Alpha record now equals its Beta record
     jdbc.update("DELETE FROM microdata_pending WHERE microdata_flow_id = :flow", p);
-    return new int[] {promoted, unchanged == null ? 0 : unchanged};
+    return new int[] {promoted, unchanged == null ? 0 : unchanged, deleted};
+  }
+
+  /**
+   * Current Alpha records of {@code flowId} in the period whose field {@code fieldCode} (in the
+   * repeating group {@code groupCode}, or a scalar field for null) holds {@code entityId} - the
+   * references that keep a record from being deleted (#25).
+   */
+  public long countReferencing(
+      Long flowId, String period, String fieldCode, String groupCode, String entityId) {
+    MapSqlParameterSource p =
+        new MapSqlParameterSource("flow", flowId)
+            .addValue("period", period)
+            .addValue("field", fieldCode)
+            .addValue("group", groupCode)
+            .addValue("entity", entityId);
+    StringBuilder sql =
+        new StringBuilder(
+            "SELECT count(*) FROM microdata_record WHERE microdata_flow_id = :flow"
+                + " AND reporting_period = :period AND stage = 'ALPHA' AND valid_to IS NULL");
+    // a cheap text test first; ids that JSON would escape skip it
+    if (entityId.chars().noneMatch(c -> c == '"' || c == '\\' || c < 0x20)) {
+      sql.append(" AND payload_json LIKE :like ESCAPE '\\'");
+      p.addValue("like", "%\"" + likeEscape(entityId) + "\"%");
+    }
+    sql.append(
+        groupCode == null
+            ? " AND payload_json::jsonb -> 'scalars' ->> :field = :entity"
+            : " AND EXISTS (SELECT 1 FROM jsonb_array_elements(payload_json::jsonb -> 'groups'"
+                + " -> :group) g WHERE g ->> :field = :entity)");
+    Long count = jdbc.queryForObject(sql.toString(), p, Long.class);
+    return count == null ? 0 : count;
+  }
+
+  /** A deleted record that is published: its Beta record is closed by the next promotion. */
+  public void addPendingDeletion(MicrodataRecord beta) {
+    jdbc.update(
+        "INSERT INTO microdata_pending (record_id, microdata_flow_id, reporting_period, entity_id,"
+            + " deleted) VALUES (:id, :flow, :period, :entity, true) ON CONFLICT DO NOTHING",
+        new MapSqlParameterSource("id", beta.id())
+            .addValue("flow", beta.microdataFlowId())
+            .addValue("period", beta.reportingPeriod())
+            .addValue("entity", beta.entityId()));
   }
 
   /** Number of current records per facet values and reporting period, for the aggregation. */

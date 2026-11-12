@@ -138,10 +138,10 @@ class ExploreDataflowPageTest extends AbstractIntegrationTest {
     // asking for Alpha / pending falls back to the published series list
     String page = body(get(base).param("view", "pending").param("stage", "ALPHA").with(oekonom));
     assertThat(page).doesNotContain("Pending changes").doesNotContain("Unpublished (Alpha)");
-    assertThat(body(get(base).param("view", "observations").param("stage", "ALPHA").with(oekonom)))
-        .contains(">100<")
-        .doesNotContain(">111<")
-        .doesNotContain(">222<");
+    assertThat(body(get(base).param("stage", "ALPHA").param("period", "2025").with(oekonom)))
+        .contains("OBS_VALUE=100")
+        .doesNotContain("OBS_VALUE=111")
+        .doesNotContain("OBS_VALUE=222");
     // facets of the Alpha-only 2026 observation are not leaked either
     assertThat(body(get(base + "/facets").param("stage", "ALPHA").with(oekonom)))
         .contains("\"total\":2");
@@ -180,9 +180,13 @@ class ExploreDataflowPageTest extends AbstractIntegrationTest {
     mvc.perform(post(base + "/promote").with(dm).with(csrf()))
         .andExpect(status().is3xxRedirection());
     assertThat(asDatenmanager(() -> observationService.countPendingChanges(df.id()))).isZero();
-    assertThat(body(get(base).param("view", "observations").param("stage", "ALPHA").with(dm)))
-        .contains(">111<")
-        .contains(">222<");
+    // cross-section: the values of one period instead of the latest ones
+    assertThat(body(get(base).param("stage", "ALPHA").param("period", "2025").with(dm)))
+        .contains("Value in 2025")
+        .contains("OBS_VALUE=111")
+        .doesNotContain("OBS_VALUE=222");
+    assertThat(body(get(base).param("stage", "ALPHA").param("period", "2026").with(dm)))
+        .contains("OBS_VALUE=222");
 
     // correction in the series value table lands in Alpha and shows up as pending
     Long chSeries =
@@ -212,5 +216,125 @@ class ExploreDataflowPageTest extends AbstractIntegrationTest {
         .contains("111");
     assertThat(body(get(base).param("view", "activity").with(dm)))
         .contains("PROMOTE_ALPHA_TO_BETA");
+  }
+
+  @Test
+  void datenmanagerAddsDeletesAndCreatesSeries() throws Exception {
+    Dataflow df = dataflowWithPendingChanges();
+    asDatenmanager(() -> observationService.promoteToBeta(df.id(), "dm"));
+    String base = "/explore/dataflows/" + df.id();
+    RequestPostProcessor dm = principal("dm@x", AppUserRole.DATENMANAGER);
+    Long measureId = dsdService.findById(df.dsdId()).measures().iterator().next().id();
+    Long de =
+        observationService.findSeriesByDataflow(df.id()).stream()
+            .filter(s -> s.seriesKey().equals("DE"))
+            .findFirst()
+            .orElseThrow()
+            .id();
+    String series = base + "/series/" + de;
+
+    // the observations tab is gone; the series tab offers "New series" instead
+    assertThat(body(get(base).param("stage", "ALPHA").with(dm)))
+        .doesNotContain(">Observations</a>")
+        .contains("New series");
+
+    // delete: a reason is required; the published value stays until the promotion
+    assertThat(body(post(series + "/delete").param("timePeriod", "2025").with(dm).with(csrf())))
+        .contains("reason is required");
+    assertThat(
+            body(
+                post(series + "/delete")
+                    .param("timePeriod", "2025")
+                    .param("reason", "reported twice")
+                    .with(dm)
+                    .with(csrf())))
+        .contains("2025 deleted - still published until the next promotion")
+        .contains("deleted, still published")
+        .contains(">Restore<");
+    String pending = body(get(base).param("view", "pending").with(dm));
+    assertThat(pending)
+        .contains("1 observation(s) would be published")
+        .contains(">deleted</span>")
+        .contains("reported twice");
+    // restoring offers the published value for editing
+    assertThat(body(get(series + "/edit-value").param("timePeriod", "2025").with(dm)))
+        .contains("value=\"100\"");
+
+    Instant beforePromotion = Instant.now();
+    var promotion = asDatenmanager(() -> observationService.promoteToBeta(df.id(), "dm"));
+    assertThat(promotion.deleted()).isEqualTo(1);
+    assertThat(
+            asDatenmanager(
+                () ->
+                    observationService.findCurrentOne(df.id(), de, "2025", ObservationStage.BETA)))
+        .isEmpty();
+    // nothing removed: published as of before the promotion still has the value
+    assertThat(
+            asDatenmanager(
+                () ->
+                    observationService.findAsOfForSeriesIds(
+                        df.id(), ObservationStage.BETA, List.of(de), beforePromotion)))
+        .anySatisfy(o -> assertThat(o.timePeriod()).isEqualTo("2025"));
+
+    // add a period; adding it twice is refused (that is a correction)
+    assertThat(
+            body(
+                post(series + "/add")
+                    .param("timePeriod", "2027")
+                    .param("measure_" + measureId, "333")
+                    .with(dm)
+                    .with(csrf())))
+        .contains(">333<")
+        .contains(">new</span>")
+        .doesNotContain("text-error");
+    assertThat(
+            body(
+                post(series + "/add")
+                    .param("timePeriod", "2027")
+                    .param("measure_" + measureId, "334")
+                    .with(dm)
+                    .with(csrf())))
+        .contains("has a value already");
+
+    // new series: a key with a first period; an existing period is refused
+    Long ctyDimension =
+        dsdService.findById(df.dsdId()).dimensions().stream()
+            .filter(d -> d.dataType() != DataType.DATE)
+            .findFirst()
+            .orElseThrow()
+            .id();
+    Long timeDimension =
+        dsdService.findById(df.dsdId()).dimensions().stream()
+            .filter(d -> d.dataType() == DataType.DATE)
+            .findFirst()
+            .orElseThrow()
+            .id();
+    mvc.perform(
+            post(base + "/series")
+                .param("dim_" + ctyDimension, "CH")
+                .param("dim_" + timeDimension, "2025")
+                .param("measure_" + measureId, "1")
+                .with(dm)
+                .with(csrf()))
+        .andExpect(
+            result ->
+                assertThat(result.getFlashMap().get("error").toString())
+                    .contains("has a value already"));
+    String location =
+        mvc.perform(
+                post(base + "/series")
+                    .param("dim_" + ctyDimension, "CH")
+                    .param("dim_" + timeDimension, "2030")
+                    .param("measure_" + measureId, "9")
+                    .with(dm)
+                    .with(csrf()))
+            .andExpect(status().is3xxRedirection())
+            .andReturn()
+            .getResponse()
+            .getRedirectedUrl();
+    assertThat(location).contains("/series/").endsWith("stage=ALPHA");
+    assertThat(body(get(base).param("view", "activity").with(dm)))
+        .contains("DELETE_OBSERVATION")
+        .contains("ADD_OBSERVATION");
   }
 }

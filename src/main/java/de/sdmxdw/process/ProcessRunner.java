@@ -573,7 +573,8 @@ public class ProcessRunner implements ApplicationRunner {
               + result.promoted()
               + " published, "
               + result.unchanged()
-              + " unchanged",
+              + " unchanged"
+              + (result.deleted() > 0 ? ", " + result.deleted() + " deleted" : ""),
           null);
     }
     MicrodataFlow flow = microdataFlow(step.target());
@@ -588,7 +589,8 @@ public class ProcessRunner implements ApplicationRunner {
             + result.promoted()
             + " published, "
             + result.unchanged()
-            + " unchanged",
+            + " unchanged"
+            + (result.deleted() > 0 ? ", " + result.deleted() + " deleted" : ""),
         null);
   }
 

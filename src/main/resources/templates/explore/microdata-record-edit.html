@@ -2,7 +2,7 @@
 <html lang="en" xmlns:th="http://www.thymeleaf.org" data-theme="sdmxdw">
 <head>
     <meta charset="UTF-8"/>
-    <title th:text="'Edit ' + ${record.entityId}">Edit record</title>
+    <title th:text="${record} != null ? 'Edit ' + ${record.entityId} : 'New record'">Edit record</title>
     <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.23/dist/full.min.css" rel="stylesheet" type="text/css" />
     <link rel="stylesheet" href="/css/brand.css" />
     <link rel="icon" href="/img/favicon.png" />
@@ -11,13 +11,33 @@
 <body class="min-h-screen bg-base-200">
 <div th:replace="~{fragments/nav :: nav}"></div>
 <form class="p-8 space-y-6 max-w-5xl" method="post"
-      th:action="@{/explore/microdata/{fid}/records/{rid}/correct(fid=${flow.id},rid=${record.id})}">
+      th:action="${record} != null ? @{/explore/microdata/{fid}/records/{rid}/correct(fid=${flow.id},rid=${record.id})} : @{/explore/microdata/{fid}/records/create(fid=${flow.id})}">
     <div class="card bg-base-100 shadow-xl p-6">
         <p class="text-sm opacity-70" th:text="${flow.agencyId} + ':' + ${flow.artefactId} + ' - ' + ${flow.name}"></p>
-        <h1 class="text-2xl font-bold"><span>Edit </span><span class="font-mono" th:text="${record.entityId}"></span>
-            <span class="text-base font-normal" th:text="' @ ' + ${record.reportingPeriod}"></span></h1>
-        <p class="text-sm opacity-70 mt-1">The corrected record is saved as a new <b>Alpha</b> version and checked exactly like a delivery
-            (required fields, codelists, references). Economists see it after the next promotion.</p>
+        <th:block th:if="${record != null}">
+            <h1 class="text-2xl font-bold"><span>Edit </span><span class="font-mono" th:text="${record.entityId}"></span>
+                <span class="text-base font-normal" th:text="' @ ' + ${record.reportingPeriod}"></span></h1>
+            <p class="text-sm opacity-70 mt-1">The corrected record is saved as a new <b>Alpha</b> version and checked exactly like a delivery
+                (required fields, codelists, references). Economists see it after the next promotion.</p>
+        </th:block>
+        <th:block th:if="${record == null}">
+            <h1 class="text-2xl font-bold" th:text="${copiedFrom} != null ? 'Copy to a new period' : 'New record'"></h1>
+            <p class="text-sm opacity-70 mt-1">The record is saved in <b>Alpha</b> and checked exactly like a delivery
+                (required fields, codelists, references). Economists see it after the next promotion.</p>
+            <input type="hidden" name="copiedFrom" th:value="${copiedFrom}"/>
+            <div class="flex flex-wrap gap-4 mt-4">
+                <div class="form-control">
+                    <label class="label py-1"><span class="label-text text-sm">Entity id<span class="text-error"> *</span></span></label>
+                    <input class="input input-bordered input-sm w-72 font-mono" name="entityId" maxlength="128" required
+                           th:value="${entityId}" th:autofocus="${entityId == null}"/>
+                </div>
+                <div class="form-control">
+                    <label class="label py-1"><span class="label-text text-sm">Reporting period<span class="text-error"> *</span></span></label>
+                    <input class="input input-bordered input-sm w-40" name="reportingPeriod" maxlength="32" required
+                           th:value="${reportingPeriod}" placeholder="e.g. 2026-Q3" th:autofocus="${entityId != null}"/>
+                </div>
+            </div>
+        </th:block>
         <div th:if="${error}" class="alert alert-error mt-4 py-2"><span th:text="${error}"></span></div>
     </div>
 
@@ -76,7 +96,9 @@
                 <input class="input input-bordered input-sm w-96" name="comment" th:value="${comment}" placeholder="e.g. corrected after query to reporting bank"/>
             </div>
             <button class="btn btn-primary btn-sm" type="submit">Save in Alpha</button>
-            <a class="btn btn-sm" th:href="@{/explore/microdata/{fid}/records/{rid}(fid=${flow.id},rid=${record.id})}">Cancel</a>
+            <a th:if="${record != null}" class="btn btn-sm" th:href="@{/explore/microdata/{fid}/records/{rid}(fid=${flow.id},rid=${record.id})}">Cancel</a>
+            <a th:if="${record == null and copiedFrom != null}" class="btn btn-sm" th:href="@{/explore/microdata/{fid}/records/{rid}(fid=${flow.id},rid=${copiedFrom})}">Cancel</a>
+            <a th:if="${record == null and copiedFrom == null}" class="btn btn-sm" th:href="@{/explore/microdata/{fid}(fid=${flow.id},stage='ALPHA')}">Cancel</a>
         </div>
     </div>
 </form>

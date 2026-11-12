@@ -191,9 +191,14 @@ public class ExploreController {
       @RequestParam(defaultValue = "false") boolean panelMode,
       Model model) {
     populateSeriesModel(dataflowId, seriesId, asOf, ObservationStage.ALPHA.name(), model);
+    // a period deleted in Alpha but still published is restored from its published value
     Observation current =
         observationService
             .findCurrentOne(dataflowId, seriesId, timePeriod, ObservationStage.ALPHA)
+            .or(
+                () ->
+                    observationService.findCurrentOne(
+                        dataflowId, seriesId, timePeriod, ObservationStage.BETA))
             .orElseThrow();
     Map<Long, String> values = observationService.parseMeasureValues(current.measureValuesJson());
     @SuppressWarnings("unchecked")
@@ -229,6 +234,118 @@ public class ExploreController {
     model.addAttribute("savedPeriod", timePeriod);
     model.addAttribute("panelMode", panelMode);
     return "explore/fragments/series-parts :: valueTable";
+  }
+
+  /** Inline form to add a period to the series (Datenmanager, Alpha view; #25). */
+  @GetMapping("/dataflows/{dataflowId}/series/{seriesId}/add-value")
+  public String addValueForm(
+      @PathVariable Long dataflowId,
+      @PathVariable Long seriesId,
+      @RequestParam(required = false) String asOf,
+      @RequestParam(defaultValue = "false") boolean panelMode,
+      Model model) {
+    populateSeriesModel(dataflowId, seriesId, asOf, ObservationStage.ALPHA.name(), model);
+    model.addAttribute("addRow", true);
+    model.addAttribute("panelMode", panelMode);
+    return "explore/fragments/series-parts :: valueTable";
+  }
+
+  @PostMapping("/dataflows/{dataflowId}/series/{seriesId}/add")
+  public String addValue(
+      @PathVariable Long dataflowId,
+      @PathVariable Long seriesId,
+      @RequestParam String timePeriod,
+      @RequestParam(required = false) String comment,
+      @RequestParam(required = false) String asOf,
+      @RequestParam(defaultValue = "false") boolean panelMode,
+      @RequestParam Map<String, String> allParams,
+      Authentication authentication,
+      Model model) {
+    Map<Long, String> measureValues = measureValues(allParams);
+    String error = null;
+    try {
+      observationService.addObservation(
+          dataflowId, seriesId, timePeriod, measureValues, comment, authentication.getName());
+    } catch (IllegalArgumentException e) {
+      error = e.getMessage();
+    }
+    populateSeriesModel(dataflowId, seriesId, asOf, ObservationStage.ALPHA.name(), model);
+    if (error != null) {
+      // show the form again with what was entered
+      @SuppressWarnings("unchecked")
+      List<Long> measureIds = (List<Long>) model.getAttribute("measureIds");
+      model.addAttribute("addRow", true);
+      model.addAttribute("addPeriod", timePeriod);
+      model.addAttribute(
+          "addValues", measureIds.stream().map(id -> measureValues.getOrDefault(id, "")).toList());
+      model.addAttribute("addComment", comment);
+      model.addAttribute("tableError", error);
+    } else {
+      model.addAttribute("savedPeriod", timePeriod.strip());
+    }
+    model.addAttribute("panelMode", panelMode);
+    return "explore/fragments/series-parts :: valueTable";
+  }
+
+  /** Inline confirmation to delete one period, with a reason (Datenmanager, Alpha view; #25). */
+  @GetMapping("/dataflows/{dataflowId}/series/{seriesId}/delete-value")
+  public String deleteValueForm(
+      @PathVariable Long dataflowId,
+      @PathVariable Long seriesId,
+      @RequestParam String timePeriod,
+      @RequestParam(required = false) String asOf,
+      @RequestParam(defaultValue = "false") boolean panelMode,
+      Model model) {
+    populateSeriesModel(dataflowId, seriesId, asOf, ObservationStage.ALPHA.name(), model);
+    model.addAttribute("deletePeriod", timePeriod);
+    model.addAttribute("panelMode", panelMode);
+    return "explore/fragments/series-parts :: valueTable";
+  }
+
+  @PostMapping("/dataflows/{dataflowId}/series/{seriesId}/delete")
+  public String deleteValue(
+      @PathVariable Long dataflowId,
+      @PathVariable Long seriesId,
+      @RequestParam String timePeriod,
+      @RequestParam(required = false) String reason,
+      @RequestParam(required = false) String asOf,
+      @RequestParam(defaultValue = "false") boolean panelMode,
+      Authentication authentication,
+      Model model) {
+    String message;
+    String error = null;
+    try {
+      boolean published =
+          observationService.deleteObservation(
+              dataflowId, seriesId, timePeriod, reason, authentication.getName());
+      message =
+          timePeriod
+              + " deleted"
+              + (published ? " - still published until the next promotion" : "")
+              + ".";
+    } catch (IllegalArgumentException e) {
+      message = null;
+      error = e.getMessage();
+    }
+    populateSeriesModel(dataflowId, seriesId, asOf, ObservationStage.ALPHA.name(), model);
+    if (error != null) {
+      model.addAttribute("deletePeriod", timePeriod);
+      model.addAttribute("tableError", error);
+    }
+    model.addAttribute("tableMessage", message);
+    model.addAttribute("panelMode", panelMode);
+    return "explore/fragments/series-parts :: valueTable";
+  }
+
+  private static Map<Long, String> measureValues(Map<String, String> params) {
+    Map<Long, String> values = new HashMap<>();
+    params.forEach(
+        (key, value) -> {
+          if (key.startsWith("measure_")) {
+            values.put(Long.valueOf(key.substring(8)), value);
+          }
+        });
+    return values;
   }
 
   private void populateSeriesModel(
@@ -306,6 +423,27 @@ public class ExploreController {
                           : null);
                 })
             .toList();
+    if (stage == ObservationStage.ALPHA) {
+      // deleted in Alpha but still published (#25): shown with the published value until promotion
+      java.util.Set<String> alphaPeriods =
+          observations.stream().map(Observation::timePeriod).collect(Collectors.toSet());
+      List<ObsRow> rows = new ArrayList<>(tableRows);
+      publishedJson.forEach(
+          (period, json) -> {
+            if (!alphaPeriods.contains(period)) {
+              Map<Long, String> values = observationService.parseMeasureValues(json);
+              rows.add(
+                  new ObsRow(
+                      period,
+                      measures.stream().map(m -> values.getOrDefault(m.id(), "")).toList(),
+                      asOfInstant == null ? null : measures.stream().map(m -> "").toList(),
+                      revisionsByPeriod.getOrDefault(period, List.of()),
+                      DELETED));
+            }
+          });
+      rows.sort(Comparator.comparing(ObsRow::timePeriod));
+      tableRows = rows;
+    }
     List<MeasureColumn> measureColumns =
         measures.stream()
             .map(
@@ -334,6 +472,7 @@ public class ExploreController {
     model.addAttribute("stage", stage.name());
     model.addAttribute("isDatenmanager", dm);
     model.addAttribute("canEdit", dm && stage == ObservationStage.ALPHA);
+    model.addAttribute("addRow", false);
     model.addAttribute("measureIds", measures.stream().map(Measure::id).toList());
     model.addAttribute("pendingCount", tableRows.stream().filter(r -> r.pending() != null).count());
   }
@@ -694,12 +833,22 @@ public class ExploreController {
    * @param pending Alpha view only: null = same as published, otherwise "new" or the published
    *     values the row would replace on promotion
    */
+  /** {@link ObsRow#pending} of a period deleted in Alpha but still published (#25). */
+  static final String DELETED = "deleted";
+
+  /**
+   * @param pending Alpha view: null = as published, "new", "deleted" or the published values
+   */
   public record ObsRow(
       String timePeriod,
       List<String> values,
       List<String> asOfValues,
       List<Revision> revisions,
       String pending) {
+    public boolean deleted() {
+      return DELETED.equals(pending);
+    }
+
     public boolean revised() {
       return revisions.size() > 1;
     }

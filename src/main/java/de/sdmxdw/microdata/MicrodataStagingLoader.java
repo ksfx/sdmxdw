@@ -508,6 +508,12 @@ public class MicrodataStagingLoader {
                 + " AND m.payload_json <> st.payload RETURNING m.id)"
                 + " DELETE FROM microdata_pending WHERE record_id IN (SELECT id FROM closed)",
             k);
+        // records delivered again after a deletion replace the pending deletion (#25)
+        named.update(
+            "DELETE FROM microdata_pending p USING md_load_final st WHERE st.flow_id = :flow"
+                + " AND st.period = :period AND p.deleted AND p.microdata_flow_id = :flow"
+                + " AND p.reporting_period = :period AND p.entity_id = st.entity_id",
+            k);
         // new vintages; pending unless Beta holds the same payload
         Integer inserted =
             named.queryForObject(

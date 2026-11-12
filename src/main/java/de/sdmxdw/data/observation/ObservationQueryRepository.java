@@ -83,13 +83,23 @@ public class ObservationQueryRepository {
       ObservationStage stage,
       Map<Integer, List<String>> keyFilters,
       String keySearch,
+      String valuePeriod,
       int limit,
       int offset) {
     MapSqlParameterSource params = new MapSqlParameterSource();
+    // the latest values, or those of one period (a cross-section; null if the series lacks it)
+    String values =
+        valuePeriod == null
+            ? " (array_agg(o.measure_values_json ORDER BY o.time_period DESC))[1] AS latest"
+            : " (array_agg(o.measure_values_json) FILTER (WHERE o.time_period = :valuePeriod))[1]"
+                + " AS latest";
+    if (valuePeriod != null) {
+      params.addValue("valuePeriod", valuePeriod);
+    }
     String sql =
         "SELECT s.id, s.series_key, min(o.time_period) AS first_period,"
             + " max(o.time_period) AS last_period, count(*) AS obs_count,"
-            + " (array_agg(o.measure_values_json ORDER BY o.time_period DESC))[1] AS latest"
+            + values
             + where(dataflowId, List.of(stage), keyFilters, null, null, keySearch, params)
             + " GROUP BY s.id, s.series_key ORDER BY s.series_key LIMIT :limit OFFSET :offset";
     params.addValue("limit", limit).addValue("offset", offset);
@@ -210,8 +220,9 @@ public class ObservationQueryRepository {
   }
 
   /**
-   * Current Alpha observations that differ from the current Beta value (or have none): exactly what
-   * {@code ObservationService.promoteToBeta} would publish - it compares the same JSON text.
+   * What {@code ObservationService.promoteToBeta} would publish - it compares the same JSON text:
+   * current Alpha observations that differ from the current Beta value (or have none), and current
+   * Beta observations without a current Alpha one, i.e. deleted in Alpha (#25).
    */
   public List<PendingChange> findPending(
       Long dataflowId,
@@ -221,10 +232,9 @@ public class ObservationQueryRepository {
       int offset) {
     MapSqlParameterSource params = new MapSqlParameterSource();
     String sql =
-        "SELECT o.series_id, s.series_key, o.time_period, o.measure_values_json AS alpha,"
-            + " b.measure_values_json AS beta, o.valid_from, o.recorded_by, o.comment"
+        "SELECT pc.*, s.series_key"
             + pendingFrom(dataflowId, keyFilters, keySearch, params)
-            + " ORDER BY s.series_key, o.time_period LIMIT :limit OFFSET :offset";
+            + " ORDER BY s.series_key, pc.time_period LIMIT :limit OFFSET :offset";
     params.addValue("limit", limit).addValue("offset", offset);
     return jdbc.query(
         sql,
@@ -236,9 +246,9 @@ public class ObservationQueryRepository {
                 rs.getString("time_period"),
                 rs.getString("alpha"),
                 rs.getString("beta"),
-                rs.getTimestamp("valid_from").toInstant(),
-                rs.getString("recorded_by"),
-                rs.getString("comment")));
+                rs.getTimestamp("changed_at").toInstant(),
+                rs.getString("changed_by"),
+                rs.getString("reason")));
   }
 
   public long countPending(
@@ -257,21 +267,43 @@ public class ObservationQueryRepository {
       Map<Integer, List<String>> keyFilters,
       String keySearch,
       MapSqlParameterSource params) {
+    String alphaCurrent =
+        " a.dataflow_id = :dataflowId AND a.series_id = b.series_id"
+            + " AND a.time_period = b.time_period AND a.stage = 'ALPHA' AND a.valid_to IS NULL";
     StringBuilder sql =
         new StringBuilder(
-            " FROM observation o JOIN series s ON s.id = o.series_id"
-                + " LEFT JOIN observation b ON b.dataflow_id = o.dataflow_id"
+            " FROM ("
+                // new or changed in Alpha
+                + "SELECT o.series_id, o.time_period, o.measure_values_json AS alpha,"
+                + " b.measure_values_json AS beta, o.valid_from AS changed_at,"
+                + " o.recorded_by AS changed_by, o.comment AS reason"
+                + " FROM observation o LEFT JOIN observation b ON b.dataflow_id = o.dataflow_id"
                 + " AND b.series_id = o.series_id AND b.time_period = o.time_period"
                 + " AND b.stage = 'BETA' AND b.valid_to IS NULL"
                 + " WHERE o.dataflow_id = :dataflowId AND o.stage = 'ALPHA' AND o.valid_to IS NULL"
-                + " AND b.measure_values_json IS DISTINCT FROM o.measure_values_json");
+                + " AND b.measure_values_json IS DISTINCT FROM o.measure_values_json"
+                // deleted in Alpha, still published: who deleted it and why from the last vintage
+                + " UNION ALL SELECT b.series_id, b.time_period, NULL, b.measure_values_json,"
+                + " d.valid_to, d.deleted_by, d.delete_reason FROM observation b"
+                + " LEFT JOIN LATERAL (SELECT a.valid_to, a.deleted_by, a.delete_reason"
+                + " FROM observation a WHERE a.dataflow_id = :dataflowId"
+                + " AND a.series_id = b.series_id AND a.time_period = b.time_period"
+                + " AND a.stage = 'ALPHA' ORDER BY a.valid_to DESC NULLS FIRST LIMIT 1) d ON true"
+                + " WHERE b.dataflow_id = :dataflowId AND b.stage = 'BETA' AND b.valid_to IS NULL"
+                + " AND NOT EXISTS (SELECT 1 FROM observation a WHERE"
+                + alphaCurrent
+                + ")) pc JOIN series s ON s.id = pc.series_id WHERE true");
     params.addValue("dataflowId", dataflowId);
     appendKeyConditions(sql, keyFilters, keySearch, params);
     return sql.toString();
   }
 
   /**
+   * @param alphaMeasureValuesJson null = deleted in Alpha (#25)
    * @param betaMeasureValuesJson null = new observation, not yet published
+   * @param validFrom when it was changed or deleted
+   * @param recordedBy who changed or deleted it
+   * @param comment reason of a correction or deletion
    */
   public record PendingChange(
       Long seriesId,
@@ -281,7 +313,12 @@ public class ObservationQueryRepository {
       String betaMeasureValuesJson,
       java.time.Instant validFrom,
       String recordedBy,
-      String comment) {}
+      String comment) {
+
+    public boolean deleted() {
+      return alphaMeasureValuesJson == null;
+    }
+  }
 
   public record SeriesSummary(
       Long seriesId,

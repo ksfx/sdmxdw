@@ -15,6 +15,7 @@
 <div class="p-8 space-y-6">
     <div class="card bg-base-100 shadow-xl p-6">
         <h1 class="text-2xl font-bold font-mono" th:text="${seriesKey}"></h1>
+        <div th:if="${flash}" class="alert alert-success mt-3 py-2"><span th:text="${flash}"></span></div>
         <div th:replace="~{explore/fragments/series-parts :: meta}"></div>
         <div class="mt-4 flex gap-2">
             <div th:replace="~{explore/fragments/series-parts :: exportMenu}"></div>

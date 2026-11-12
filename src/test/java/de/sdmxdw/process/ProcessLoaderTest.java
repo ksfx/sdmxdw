@@ -264,4 +264,27 @@ class ProcessLoaderTest extends AbstractIntegrationTest {
     assertThat(recordService.findCurrentOne(m.loans().id(), "L-4", "2026-Q3", MicrodataStage.ALPHA))
         .isEmpty();
   }
+
+  @Test
+  void aDeliveryAfterADeletionReplacesThePendingDeletion() throws Exception {
+    ProcessFixtures.Micro m = fixtures.microdata(ProcessFixtures.suffix());
+    String cp = ProcessFixtures.ref(m.counterparties());
+    String delivery =
+        "STRUCTURE_ID,ENTITY_ID,REPORTING_PERIOD,NAME\n"
+            + cp
+            + ",CP-1,2026-Q3,Muster AG\n"
+            + cp
+            + ",CP-2,2026-Q3,Beispiel AG\n";
+    write("cp.csv", delivery);
+    assertThat(loader.load(out, false, "process:test#1").errors()).isEmpty();
+    recordService.promoteToBeta(m.counterparties().id(), "dm");
+
+    // deleted in the explorer (#25), then delivered again unchanged: nothing left to publish
+    recordService.deleteRecord(m.counterparties().id(), "CP-2", "2026-Q3", "mistake", "dm");
+    assertThat(recordService.countPendingChanges(m.counterparties().id())).isEqualTo(1);
+    var report = loader.load(out, false, "process:test#2");
+    assertThat(report.targets()).extracting(ProcessLoader.TargetReport::written).containsExactly(1);
+    assertThat(recordService.countPendingChanges(m.counterparties().id())).isZero();
+    assertThat(recordService.promoteToBeta(m.counterparties().id(), "dm").deleted()).isZero();
+  }
 }

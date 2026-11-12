@@ -89,4 +89,18 @@ public interface MicrodataRecordRepository extends ListCrudRepository<MicrodataR
       @Param("reportingPeriod") String reportingPeriod,
       @Param("stage") String stage,
       @Param("validTo") Instant validTo);
+
+  /** Deletes the current Alpha vintage (#25): closes it and notes who deleted it and why. */
+  @Modifying
+  @Query(
+      "UPDATE microdata_record SET valid_to = :validTo, deleted_by = :deletedBy,"
+          + " delete_reason = :reason WHERE microdata_flow_id = :flowId AND entity_id = :entityId"
+          + " AND reporting_period = :reportingPeriod AND stage = 'ALPHA' AND valid_to IS NULL")
+  int deleteCurrentAlpha(
+      @Param("flowId") Long flowId,
+      @Param("entityId") String entityId,
+      @Param("reportingPeriod") String reportingPeriod,
+      @Param("validTo") Instant validTo,
+      @Param("deletedBy") String deletedBy,
+      @Param("reason") String reason);
 }
