@@ -84,7 +84,7 @@
     <div class="card bg-base-100 shadow-xl p-6" th:if="${view == 'series'}">
         <!-- new series: key, first period and values (#25) -->
         <details th:if="${isDatenmanager}" class="mb-4 border border-base-300 rounded-box p-3">
-            <summary class="cursor-pointer font-semibold">+ New series</summary>
+            <summary class="cursor-pointer font-semibold"><span th:replace="~{fragments/icons :: icon('plus')}"></span> New series</summary>
             <p class="text-xs opacity-70 mt-2">Saved in <b>Alpha</b> and published with the next promotion. Further periods are added on the series itself.</p>
             <form method="post" th:action="@{/explore/dataflows/{id}/series(id=${dataflow.id})}" class="flex flex-wrap gap-3 items-end mt-3">
                 <div th:each="field : ${keyDimensionFields}" class="form-control">

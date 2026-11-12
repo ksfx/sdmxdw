@@ -58,7 +58,7 @@
             <div class="flex justify-between items-center">
                 <h2 class="font-bold">Steps</h2>
                 <div class="flex gap-2">
-                    <button type="button" class="btn btn-sm" onclick="addStep()">+ Step</button>
+                    <button type="button" class="btn btn-sm" onclick="addStep()"><span th:replace="~{fragments/icons :: icon('plus')}"></span> Step</button>
                     <button class="btn btn-sm btn-primary" type="submit">Save steps</button>
                 </div>
             </div>
@@ -71,8 +71,8 @@
                 <tbody>
                 <tr th:each="s, it : ${process.steps}" class="step-row align-top">
                     <td class="whitespace-nowrap">
-                        <button type="button" class="btn btn-ghost btn-xs" onclick="moveStep(this,-1)" title="Up">↑</button>
-                        <button type="button" class="btn btn-ghost btn-xs" onclick="moveStep(this,1)" title="Down">↓</button>
+                        <button type="button" class="btn btn-ghost btn-xs btn-square" onclick="moveStep(this,-1)" title="Move up" aria-label="Move up"><span th:replace="~{fragments/icons :: icon('chevron-up')}"></span></button>
+                        <button type="button" class="btn btn-ghost btn-xs btn-square" onclick="moveStep(this,1)" title="Move down" aria-label="Move down"><span th:replace="~{fragments/icons :: icon('chevron-down')}"></span></button>
                     </td>
                     <td><input class="input input-bordered input-xs w-28 font-mono" data-f="stepKey" th:value="${s.stepKey}" required/></td>
                     <td>
@@ -103,7 +103,7 @@
                         </select>
                     </td>
                     <td><input class="input input-bordered input-xs w-32 font-mono" data-f="needs" th:value="${s.needs}" placeholder="previous"/></td>
-                    <td><button type="button" class="btn btn-ghost btn-xs text-error" onclick="this.closest('tr').remove()" title="Remove">✕</button></td>
+                    <td><button type="button" class="btn btn-ghost btn-xs btn-square text-error" onclick="this.closest('tr').remove()" title="Remove step" aria-label="Remove step"><span th:replace="~{fragments/icons :: icon('trash-2')}"></span></button></td>
                 </tr>
                 </tbody>
             </table>
@@ -113,8 +113,8 @@
         <template id="step-template">
             <tr class="step-row align-top">
                 <td class="whitespace-nowrap">
-                    <button type="button" class="btn btn-ghost btn-xs" onclick="moveStep(this,-1)">↑</button>
-                    <button type="button" class="btn btn-ghost btn-xs" onclick="moveStep(this,1)">↓</button>
+                    <button type="button" class="btn btn-ghost btn-xs btn-square" onclick="moveStep(this,-1)" title="Move up" aria-label="Move up"><span th:replace="~{fragments/icons :: icon('chevron-up')}"></span></button>
+                    <button type="button" class="btn btn-ghost btn-xs btn-square" onclick="moveStep(this,1)" title="Move down" aria-label="Move down"><span th:replace="~{fragments/icons :: icon('chevron-down')}"></span></button>
                 </td>
                 <td><input class="input input-bordered input-xs w-28 font-mono" data-f="stepKey" required/></td>
                 <td><select class="select select-bordered select-xs" data-f="type" onchange="showType(this)">
@@ -134,7 +134,7 @@
                         <option th:each="o : ${otherProcesses}" th:value="${o.id}" th:text="${o.name}"></option></select>
                 </td>
                 <td><input class="input input-bordered input-xs w-32 font-mono" data-f="needs" placeholder="previous"/></td>
-                <td><button type="button" class="btn btn-ghost btn-xs text-error" onclick="this.closest('tr').remove()">✕</button></td>
+                <td><button type="button" class="btn btn-ghost btn-xs btn-square text-error" onclick="this.closest('tr').remove()" title="Remove step" aria-label="Remove step"><span th:replace="~{fragments/icons :: icon('trash-2')}"></span></button></td>
             </tr>
         </template>
         <div id="step-graph-overlay" class="fixed inset-0 z-50 hidden bg-black/50 backdrop-blur-sm p-6">
@@ -351,11 +351,12 @@
                         <td><input class="input input-bordered input-xs w-56" data-f="label" th:value="${p.label}"/></td>
                         <td><input class="input input-bordered input-xs w-40" data-f="defaultValue" th:value="${p.defaultValue}"/></td>
                         <td><input type="checkbox" class="checkbox checkbox-xs" data-f="required" th:checked="${p.required}"/></td>
-                        <td><button type="button" class="btn btn-ghost btn-xs text-error" onclick="this.closest('tr').remove()">✕</button></td>
+                        <td><button type="button" class="btn btn-ghost btn-xs btn-square text-error" onclick="this.closest('tr').remove()" title="Remove parameter" aria-label="Remove parameter"><span th:replace="~{fragments/icons :: icon('trash-2')}"></span></button></td>
                     </tr>
                     </tbody>
                 </table>
-                <button type="button" class="btn btn-xs mt-1" onclick="addParam()">+ Parameter</button>
+                <button type="button" class="btn btn-xs mt-1" onclick="addParam()"><span th:replace="~{fragments/icons :: icon('plus')}"></span> Parameter</button>
+                <template id="icon-trash"><span th:replace="~{fragments/icons :: icon('trash-2')}"></span></template>
             </div>
             <button class="btn btn-primary btn-sm w-fit" type="submit">Save settings</button>
         </form>
@@ -373,7 +374,8 @@
                     + '<td><input class="input input-bordered input-xs w-56" data-f="label"/></td>'
                     + '<td><input class="input input-bordered input-xs w-40" data-f="defaultValue"/></td>'
                     + '<td><input type="checkbox" class="checkbox checkbox-xs" data-f="required"/></td>'
-                    + '<td><button type="button" class="btn btn-ghost btn-xs text-error" onclick="this.closest(\'tr\').remove()">✕</button></td>';
+                    + '<td><button type="button" class="btn btn-ghost btn-xs btn-square text-error" onclick="this.closest(\'tr\').remove()" title="Remove parameter" aria-label="Remove parameter">'
+                    + document.getElementById('icon-trash').innerHTML + '</button></td>';
                 document.querySelector('#params tbody').appendChild(row);
             }
             document.getElementById('settings-form').addEventListener('submit', () => {

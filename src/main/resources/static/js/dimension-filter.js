@@ -11,6 +11,8 @@
  */
 (function () {
   const MAX_ITEMS = 100;
+  // Lucide "x" (ISC License, see /licenses/lucide-LICENSE.txt)
+  const X_ICON = '<svg class="lucide inline-block w-[1.1em] h-[1.1em] align-[-0.15em]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
 
   function el(tag, cls, text) {
     const e = document.createElement(tag);
@@ -102,9 +104,11 @@
         const v = byCode.get(code);
         const chip = el('span', 'badge badge-primary gap-1 cursor-default', code);
         chip.title = v && v.name ? v.name : code;
-        const x = el('button', 'opacity-70 hover:opacity-100', '×');
+        const x = el('button', 'opacity-70 hover:opacity-100');
+        x.innerHTML = X_ICON;
         x.type = 'button';
         x.title = 'Remove';
+        x.setAttribute('aria-label', 'Remove ' + code);
         x.addEventListener('click', () => this.remove(d.param, code));
         chip.appendChild(x);
         chips.appendChild(chip);

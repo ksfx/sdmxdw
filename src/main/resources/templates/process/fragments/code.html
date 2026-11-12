@@ -49,11 +49,11 @@
             <form method="post" th:action="${action} + '/rename'" class="flex gap-1" th:if="${action != '/processes/shared/files'}">
                 <input type="hidden" name="path" th:value="${file.path}"/>
                 <input class="input input-bordered input-xs font-mono w-56" name="newPath" th:value="${file.path}" required/>
-                <button class="btn btn-xs" type="submit">Rename</button>
+                <button class="btn btn-xs" type="submit" title="Rename the file"><span th:replace="~{fragments/icons :: icon('pencil')}"></span> Rename</button>
             </form>
             <form method="post" th:action="${action} + '/delete'" onsubmit="return confirm('Delete this file?')">
                 <input type="hidden" name="path" th:value="${file.path}"/>
-                <button class="btn btn-xs btn-error btn-outline" type="submit">Delete</button>
+                <button class="btn btn-xs btn-error btn-outline" type="submit" title="Delete the file"><span th:replace="~{fragments/icons :: icon('trash-2')}"></span> Delete</button>
             </form>
         </div>
     </div>

@@ -37,11 +37,11 @@
                    th:text="${alpha} ? 'Show published (Beta)' : 'Show unpublished (Alpha)'"></a>
                 <div th:if="${canEdit}" class="flex gap-2">
                     <a class="btn btn-sm btn-primary"
-                       th:href="@{/explore/microdata/{fid}/records/{rid}/edit(fid=${flow.id},rid=${record.id})}">Edit</a>
+                       th:href="@{/explore/microdata/{fid}/records/{rid}/edit(fid=${flow.id},rid=${record.id})}"><span th:replace="~{fragments/icons :: icon('pencil')}"></span> Edit</a>
                     <a class="btn btn-sm" title="New record of this entity in another period, prefilled with these values"
-                       th:href="@{/explore/microdata/{fid}/records/new(fid=${flow.id},from=${record.id})}">Copy to new period</a>
+                       th:href="@{/explore/microdata/{fid}/records/new(fid=${flow.id},from=${record.id})}"><span th:replace="~{fragments/icons :: icon('copy')}"></span> Copy to new period</a>
                     <button class="btn btn-sm btn-outline btn-error" type="button"
-                            onclick="document.getElementById('delete-record').showModal()">Delete</button>
+                            onclick="document.getElementById('delete-record').showModal()"><span th:replace="~{fragments/icons :: icon('trash-2')}"></span> Delete</button>
                 </div>
             </div>
         </div>

@@ -250,7 +250,7 @@ class ExploreDataflowPageTest extends AbstractIntegrationTest {
                     .with(csrf())))
         .contains("2025 deleted - still published until the next promotion")
         .contains("deleted, still published")
-        .contains(">Restore<");
+        .contains("aria-label=\"Restore\"");
     String pending = body(get(base).param("view", "pending").with(dm));
     assertThat(pending)
         .contains("1 observation(s) would be published")
@@ -286,7 +286,7 @@ class ExploreDataflowPageTest extends AbstractIntegrationTest {
                     .with(csrf())))
         .contains(">333<")
         .contains(">new</span>")
-        .doesNotContain("text-error");
+        .doesNotContain("has a value already");
     assertThat(
             body(
                 post(series + "/add")

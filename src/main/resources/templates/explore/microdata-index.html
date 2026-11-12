@@ -107,6 +107,7 @@
         </div>
         <div class="flex-1 flex min-h-0">
             <div id="relations-canvas" class="flex-1"></div>
+            <template id="icon-x"><span th:replace="~{fragments/icons :: icon('x')}"></span></template>
             <aside id="relations-panel" class="hidden w-96 border-l border-base-300 overflow-y-auto p-5 text-sm"></aside>
         </div>
     </div>
@@ -258,7 +259,10 @@
         titles.appendChild(el('h3', 'text-lg font-bold', node.name));
         titles.appendChild(el('div', 'text-xs opacity-60 font-mono', node.artefactId));
         head.appendChild(titles);
-        const close = el('button', 'btn btn-xs btn-ghost', '✕');
+        const close = el('button', 'btn btn-xs btn-ghost btn-square');
+        close.innerHTML = document.getElementById('icon-x').innerHTML;
+        close.title = 'Close';
+        close.setAttribute('aria-label', 'Close');
         close.type = 'button';
         close.title = 'Close details';
         close.onclick = closeEntity;

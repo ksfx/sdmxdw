@@ -98,7 +98,7 @@
         <div class="flex justify-between items-center mb-2">
             <p class="text-sm opacity-70" th:text="${#numbers.formatInteger(result.total, 1, 'COMMA')} + ' record(s)' + (${result.totalPages} > 1 ? ', page ' + (${result.page} + 1) + ' of ' + ${result.totalPages} : '')"></p>
             <a th:if="${isDatenmanager}" class="btn btn-sm" title="Create a record in Alpha: a new entity, or an entity in another period"
-               th:href="@{/explore/microdata/{fid}/records/new(fid=${flow.id})}">+ New record</a>
+               th:href="@{/explore/microdata/{fid}/records/new(fid=${flow.id})}"><span th:replace="~{fragments/icons :: icon('plus')}"></span> New record</a>
         </div>
         <div class="overflow-x-auto">
             <table class="table table-sm table-zebra">

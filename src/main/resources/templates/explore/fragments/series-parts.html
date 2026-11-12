@@ -27,7 +27,7 @@
 </div>
 
 <div th:fragment="exportMenu" class="dropdown" th:if="${stage != 'ALPHA'}">
-    <div tabindex="0" role="button" class="btn btn-sm">Export ▾</div>
+    <div tabindex="0" role="button" class="btn btn-sm"><span th:replace="~{fragments/icons :: icon('download')}"></span> Export ▾</div>
     <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-10 w-48 p-2 shadow">
         <li><a th:href="@{/explore/dataflows/{id}/series/{sid}/export.csv(id=${dataflow.id},sid=${seriesId},asOf=${asOf})}">CSV</a></li>
         <li><a th:href="@{/explore/dataflows/{id}/series/{sid}/export.xlsx(id=${dataflow.id},sid=${seriesId},asOf=${asOf})}">Excel</a></li>
@@ -125,7 +125,7 @@
         <td colspan="99" class="py-1">
             <button type="button" class="btn btn-xs"
                     th:attr="hx-get=@{/explore/dataflows/{id}/series/{sid}/add-value(id=${dataflow.id},sid=${seriesId},asOf=${asOf},panelMode=${panelMode})}"
-                    hx-target="closest table" hx-swap="outerHTML">+ Add period</button>
+                    hx-target="closest table" hx-swap="outerHTML"><span th:replace="~{fragments/icons :: icon('plus')}"></span> Add period</button>
         </td>
     </tr>
     <th:block th:each="row : ${tableRows}">
@@ -210,12 +210,18 @@
                   th:title="'published value, replaced on promotion'" th:text="'pending, now ' + ${row.pending}"></span>
         </td>
         <td th:if="${canEdit}" class="whitespace-nowrap">
-            <a class="link link-primary text-sm" href="#" th:title="${row.deleted} ? 'Restore: edit the published value and save it in Alpha again' : 'Correct the value'"
-               th:attr="hx-get=@{/explore/dataflows/{id}/series/{sid}/edit-value(id=${dataflow.id},sid=${seriesId},timePeriod=${row.timePeriod},asOf=${asOf},panelMode=${panelMode})}"
-               hx-target="closest table" hx-swap="outerHTML" th:text="${row.deleted} ? 'Restore' : 'Edit'">Edit</a>
-            <a th:unless="${row.deleted}" class="link link-error text-sm ml-2" href="#" title="Delete this period (with a reason)"
-               th:attr="hx-get=@{/explore/dataflows/{id}/series/{sid}/delete-value(id=${dataflow.id},sid=${seriesId},timePeriod=${row.timePeriod},asOf=${asOf},panelMode=${panelMode})}"
-               hx-target="closest table" hx-swap="outerHTML">Delete</a>
+            <button th:if="${row.deleted}" type="button" class="btn btn-ghost btn-xs btn-square text-primary"
+                    title="Restore: edit the published value and save it in Alpha again" aria-label="Restore"
+                    th:attr="hx-get=@{/explore/dataflows/{id}/series/{sid}/edit-value(id=${dataflow.id},sid=${seriesId},timePeriod=${row.timePeriod},asOf=${asOf},panelMode=${panelMode})}"
+                    hx-target="closest table" hx-swap="outerHTML"><span th:replace="~{fragments/icons :: icon('undo-2')}"></span></button>
+            <button th:unless="${row.deleted}" type="button" class="btn btn-ghost btn-xs btn-square text-primary"
+                    title="Correct the value" aria-label="Edit"
+                    th:attr="hx-get=@{/explore/dataflows/{id}/series/{sid}/edit-value(id=${dataflow.id},sid=${seriesId},timePeriod=${row.timePeriod},asOf=${asOf},panelMode=${panelMode})}"
+                    hx-target="closest table" hx-swap="outerHTML"><span th:replace="~{fragments/icons :: icon('pencil')}"></span></button>
+            <button th:unless="${row.deleted}" type="button" class="btn btn-ghost btn-xs btn-square text-error"
+                    title="Delete this period (with a reason)" aria-label="Delete"
+                    th:attr="hx-get=@{/explore/dataflows/{id}/series/{sid}/delete-value(id=${dataflow.id},sid=${seriesId},timePeriod=${row.timePeriod},asOf=${asOf},panelMode=${panelMode})}"
+                    hx-target="closest table" hx-swap="outerHTML"><span th:replace="~{fragments/icons :: icon('trash-2')}"></span></button>
             <span th:if="${savedPeriod == row.timePeriod}" class="text-xs text-success ml-1">saved</span>
         </td>
     </tr>

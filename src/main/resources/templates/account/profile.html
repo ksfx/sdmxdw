@@ -75,7 +75,7 @@
                 <td>
                     <form method="post" th:if="${t.revokedAt == null}" th:action="@{/account/profile/tokens/{id}/revoke(id=${t.id})}"
                           onsubmit="return confirm('Revoke this token? Scripts using it will stop working.')">
-                        <button class="btn btn-xs btn-error btn-outline" type="submit">Revoke</button>
+                        <button class="btn btn-ghost btn-xs btn-square text-error" type="submit" title="Revoke this token" aria-label="Revoke token"><span th:replace="~{fragments/icons :: icon('ban')}"></span></button>
                     </form>
                 </td>
             </tr>

@@ -209,8 +209,8 @@ class ExploreMicrodataFlowPageTest extends AbstractIntegrationTest {
     MicrodataFlow flow = flow();
     String base = "/explore/microdata/" + flow.id();
 
-    assertThat(body(get(base).param("stage", "ALPHA").with(dm))).contains("+ New record");
-    assertThat(body(get(base).with(oekonom))).doesNotContain("+ New record");
+    assertThat(body(get(base).param("stage", "ALPHA").with(dm))).contains("New record</a>");
+    assertThat(body(get(base).with(oekonom))).doesNotContain("New record</a>");
     assertThat(body(get(base + "/records/new").with(dm)))
         .contains("New record")
         .contains("name=\"entityId\"")
