@@ -248,7 +248,8 @@ class ExploreDataflowPageTest extends AbstractIntegrationTest {
                     .param("reason", "reported twice")
                     .with(dm)
                     .with(csrf())))
-        .contains("2025 deleted - still published until the next promotion")
+        // only the row comes back (#27): struck through until the promotion
+        .startsWith("<tr")
         .contains("deleted, still published")
         .contains("aria-label=\"Restore\"");
     String pending = body(get(base).param("view", "pending").with(dm));
@@ -336,5 +337,86 @@ class ExploreDataflowPageTest extends AbstractIntegrationTest {
     assertThat(body(get(base).param("view", "activity").with(dm)))
         .contains("DELETE_OBSERVATION")
         .contains("ADD_OBSERVATION");
+  }
+
+  @Test
+  void longSeriesArePagedRowsSwapAloneAndTheChartIsJson() throws Exception {
+    String suffix = "LNG" + (++counter) + "_" + System.nanoTime() % 100000;
+    RequestPostProcessor dm = principal("dm@x", AppUserRole.DATENMANAGER);
+    Dataflow df =
+        asDatenmanager(
+            () -> {
+              ConceptScheme cs =
+                  conceptSchemeService.createScheme("TST", "CS_" + suffix, "1.0.0", "Concepts");
+              for (String c : List.of("TICKER", "TIME_PERIOD", "OBS_VALUE")) {
+                cs = conceptSchemeService.addConcept(cs.id(), c, c);
+              }
+              DataStructureDefinition dsd =
+                  dsdService.createDsd("TST", "DSD_" + suffix, "1.0.0", "DSD");
+              dsd = dsdService.addDimension(dsd.id(), id(cs, "TICKER"), null, DataType.STRING);
+              dsd = dsdService.addDimension(dsd.id(), id(cs, "TIME_PERIOD"), null, DataType.DATE);
+              dsd = dsdService.addMeasure(dsd.id(), id(cs, "OBS_VALUE"), DataType.NUMBER);
+              Dataflow flow =
+                  dataflowService.createDataflow(
+                      "TST", "DF_" + suffix, "1.0.0", "Prices", dsd.id());
+              java.time.LocalDate day = java.time.LocalDate.of(2026, 1, 1);
+              for (int i = 0; i < 250; i++) {
+                observationService.recordObservationByConceptCode(
+                    flow.id(),
+                    Map.of("TICKER", "XYZ", "TIME_PERIOD", day.plusDays(i).toString()),
+                    Map.of("OBS_VALUE", String.valueOf(100 + i)),
+                    "dm");
+              }
+              // a revision of the latest day
+              observationService.recordObservationByConceptCode(
+                  flow.id(),
+                  Map.of("TICKER", "XYZ", "TIME_PERIOD", "2026-09-07"),
+                  Map.of("OBS_VALUE", "999"),
+                  "dm");
+              return flow;
+            });
+    Long sid = observationService.findSeriesByDataflow(df.id()).getFirst().id();
+    String series = "/explore/dataflows/" + df.id() + "/series/" + sid;
+
+    // first page: the latest 100 days, newest first, revisions not embedded
+    String page = body(get(series).param("stage", "ALPHA").with(dm));
+    assertThat(page)
+        .contains("Periods 1-100 of 250, latest first")
+        .contains(">2026-09-07<")
+        .doesNotContain(">2026-01-01<")
+        .contains("revised 1x")
+        .contains("/revisions?timePeriod=2026-09-07");
+    assertThat(page.indexOf(">2026-09-07<")).isLessThan(page.indexOf(">2026-09-06<"));
+    // last page through the pager
+    assertThat(
+            body(get(series + "/value-table").param("stage", "ALPHA").param("vpage", "2").with(dm)))
+        .contains("Periods 201-250 of 250")
+        .contains(">2026-01-01<")
+        .doesNotContain(">2026-09-07<");
+    // the revisions of one period, when opened
+    assertThat(
+            body(
+                get(series + "/revisions")
+                    .param("timePeriod", "2026-09-07")
+                    .param("stage", "ALPHA")
+                    .with(dm)))
+        .contains(">349<")
+        .contains(">999<")
+        .contains("current");
+    // editing swaps one row only
+    String editor = body(get(series + "/edit-value").param("timePeriod", "2026-09-06").with(dm));
+    assertThat(editor).startsWith("<tr").contains("value=\"348\"").doesNotContain("<table");
+    Long measureId = dsdService.findById(df.dsdId()).measures().iterator().next().id();
+    String saved =
+        body(
+            post(series + "/correct")
+                .param("timePeriod", "2026-09-06")
+                .param("measure_" + measureId, "348.5")
+                .with(dm)
+                .with(csrf()));
+    assertThat(saved).startsWith("<tr").contains(">348.5<").contains("saved");
+    // the chart reads one measure as JSON, ascending
+    String json = body(get(series + "/chart.json").param("stage", "ALPHA").with(dm));
+    assertThat(json).startsWith("{\"labels\":[\"2026-01-01\"").contains("999.0").contains("348.5");
   }
 }

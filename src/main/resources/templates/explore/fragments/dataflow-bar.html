@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<!--
+  Head of the pages below a dataflow (series page): the dataflow and its views as on the dataflow
+  page, so it is clear the series belongs to it. Parameters: dataflow, stage, isDatenmanager.
+-->
+<html xmlns:th="http://www.thymeleaf.org">
+<body>
+<div th:fragment="bar(dataflow, stage, isDatenmanager)" class="flex flex-wrap items-center justify-between gap-3">
+    <div>
+        <a class="font-bold link link-hover" th:href="@{/explore/dataflows/{id}(id=${dataflow.id},stage=${stage == 'ALPHA' ? 'ALPHA' : null})}"
+           th:text="${dataflow.agencyId} + ':' + ${dataflow.artefactId} + '(' + ${dataflow.version} + ')'"></a>
+        <span class="opacity-70" th:text="' - ' + ${dataflow.name}"></span>
+    </div>
+    <div role="tablist" class="tabs tabs-boxed tabs-sm bg-base-200 w-fit">
+        <a role="tab" class="tab" th:href="@{/explore/dataflows/{id}(id=${dataflow.id},view='series',stage=${stage == 'ALPHA' ? 'ALPHA' : null})}">Series</a>
+        <a role="tab" class="tab" th:href="@{/explore/dataflows/{id}(id=${dataflow.id},view='table',stage=${stage == 'ALPHA' ? 'ALPHA' : null})}">Table</a>
+        <a th:if="${isDatenmanager}" role="tab" class="tab" th:href="@{/explore/dataflows/{id}(id=${dataflow.id},view='pending')}">Pending changes</a>
+        <a th:if="${isDatenmanager}" role="tab" class="tab" th:href="@{/explore/dataflows/{id}(id=${dataflow.id},view='activity')}">Activity</a>
+    </div>
+</div>
+</body>
+</html>

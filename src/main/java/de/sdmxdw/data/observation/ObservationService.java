@@ -516,6 +516,79 @@ public class ObservationService {
   }
 
   /**
+   * One slice of a cube for the table view (#15): the current observations of a stage under the key
+   * filters, for one period or (null) all periods, at most {@code limit} rows.
+   */
+  @PreAuthorize("#stage.name() == 'BETA' or hasRole('DATENMANAGER')")
+  public List<ObservationQueryRepository.ObservationListRow> findSlice(
+      Long dataflowId,
+      ObservationStage stage,
+      Map<Integer, List<String>> keyFilters,
+      String timePeriod,
+      int limit) {
+    return observationQueryRepository.findCurrent(
+        dataflowId, List.of(stage), keyFilters, timePeriod, timePeriod, null, limit, 0);
+  }
+
+  // --- one series for the explorer (#27)
+  // -----------------------------------------------------------
+
+  @PreAuthorize("#stage.name() == 'BETA' or hasRole('DATENMANAGER')")
+  public List<ObservationQueryRepository.SeriesValue> findSeriesPage(
+      Long dataflowId, Long seriesId, ObservationStage stage, int limit, int offset) {
+    return observationQueryRepository.seriesPage(dataflowId, seriesId, stage, limit, offset);
+  }
+
+  @PreAuthorize("#stage.name() == 'BETA' or hasRole('DATENMANAGER')")
+  public int countSeriesPeriods(Long dataflowId, Long seriesId, ObservationStage stage) {
+    return observationQueryRepository.countSeriesPeriods(dataflowId, seriesId, stage);
+  }
+
+  @PreAuthorize("#stage.name() == 'BETA' or hasRole('DATENMANAGER')")
+  public Map<String, String> findSeriesValuesAt(
+      Long dataflowId,
+      Long seriesId,
+      ObservationStage stage,
+      Collection<String> periods,
+      Instant asOf) {
+    return observationQueryRepository.seriesValuesAt(dataflowId, seriesId, stage, periods, asOf);
+  }
+
+  @PreAuthorize("#stage.name() == 'BETA' or hasRole('DATENMANAGER')")
+  public Map<String, Integer> findRevisionCounts(
+      Long dataflowId, Long seriesId, ObservationStage stage, Collection<String> periods) {
+    return observationQueryRepository.revisionCounts(dataflowId, seriesId, stage, periods);
+  }
+
+  @PreAuthorize("hasRole('DATENMANAGER')")
+  public int countSeriesPending(Long dataflowId, Long seriesId) {
+    return observationQueryRepository.countSeriesPending(dataflowId, seriesId);
+  }
+
+  @PreAuthorize("#stage.name() == 'BETA' or hasRole('DATENMANAGER')")
+  public List<String[]> findSeriesChart(
+      Long dataflowId, Long seriesId, ObservationStage stage, Long measureId, Instant asOf) {
+    return observationQueryRepository.seriesChart(dataflowId, seriesId, stage, measureId, asOf);
+  }
+
+  /** Time periods with data under the key filters, ascending (#15). */
+  @PreAuthorize("#stage.name() == 'BETA' or hasRole('DATENMANAGER')")
+  public List<String> findTimePeriods(
+      Long dataflowId, ObservationStage stage, Map<Integer, List<String>> keyFilters) {
+    return observationQueryRepository.timePeriods(dataflowId, stage, keyFilters);
+  }
+
+  /** Codes of one key dimension (1-based position) with series counts under the filters. */
+  @PreAuthorize("#stage.name() == 'BETA' or hasRole('DATENMANAGER')")
+  public Map<String, Long> findKeyFacet(
+      Long dataflowId,
+      ObservationStage stage,
+      int position,
+      Map<Integer, List<String>> keyFilters) {
+    return observationQueryRepository.facetCounts(dataflowId, stage, position, keyFilters, null);
+  }
+
+  /**
    * Facet counts for every key dimension (1-based position -> code -> series count), each computed
    * with the selections of the <em>other</em> dimensions, so choosing a code narrows the rest.
    */

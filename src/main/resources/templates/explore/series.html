@@ -5,25 +5,33 @@
     <title>Explore series</title>
     <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.23/dist/full.min.css" rel="stylesheet" type="text/css" />
     <link rel="stylesheet" href="/css/brand.css" />
-    <link rel="icon" href="/img/favicon.png" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/img/favicon-192.png" />
+    <link rel="apple-touch-icon" href="/img/apple-touch-icon.png" />
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://unpkg.com/htmx.org@2.0.3"></script>
+    <script src="/js/series-chart.js"></script>
 </head>
 <body class="min-h-screen bg-base-200">
 <div th:replace="~{fragments/nav :: nav}"></div>
 <div class="p-8 space-y-6">
+    <nav th:replace="~{fragments/breadcrumb :: crumbs(${crumbs}, ${stage == 'ALPHA'})}"></nav>
+    <div class="card bg-base-100 shadow-xl px-6 py-3">
+        <div th:replace="~{explore/fragments/dataflow-bar :: bar(${dataflow}, ${stage}, ${isDatenmanager})}"></div>
+    </div>
     <div class="card bg-base-100 shadow-xl p-6">
         <h1 class="text-2xl font-bold font-mono" th:text="${seriesKey}"></h1>
         <div th:if="${flash}" class="alert alert-success mt-3 py-2"><span th:text="${flash}"></span></div>
         <div th:replace="~{explore/fragments/series-parts :: meta}"></div>
         <div class="mt-4 flex gap-2">
             <div th:replace="~{explore/fragments/series-parts :: exportMenu}"></div>
-            <a class="btn btn-sm" th:href="@{/explore/dataflows/{id}(id=${dataflow.id},stage=${stage == 'ALPHA'} ? 'ALPHA' : null)}">Back</a>
+            <a class="btn btn-sm" th:href="${backHref}" th:text="${ret} != null ? 'Back to the table' : 'Back to the series list'">Back</a>
         </div>
         <div class="mt-4"><form th:replace="~{explore/fragments/series-parts :: asOfForm}"></form></div>
         <div class="mt-3"><div th:replace="~{explore/fragments/series-parts :: stageSwitch}"></div></div>
-        <canvas id="seriesChart" class="mt-6" height="100"></canvas>
+        <!-- fixed height, width follows the page: a fixed ratio gets flat on wide screens -->
+        <div class="relative mt-6 w-full h-[clamp(16rem,40vh,26rem)]"><canvas id="seriesChart"></canvas></div>
     </div>
 
     <div class="card bg-base-100 shadow-xl p-6">
@@ -31,15 +39,8 @@
     </div>
 </div>
 <script th:inline="javascript">
-    const labels = /*[[${chartLabels}]]*/ [];
-    const values = /*[[${chartValues}]]*/ [];
-    const asOfValues = /*[[${chartAsOfValues}]]*/ null;
-    const datasets = [{label: /*[[${seriesKey}]]*/ 'Series', data: values, borderColor: '#053771', tension: 0.1}];
-    if (asOfValues) {
-        datasets.push({label: 'as of ' + /*[[${asOf}]]*/ '', data: asOfValues, borderColor: '#13ad8f',
-                       borderDash: [6, 4], tension: 0.1, spanGaps: false});
-    }
-    new Chart(document.getElementById('seriesChart'), {type: 'line', data: {labels: labels, datasets: datasets}});
+    SeriesChart.init(document.getElementById('seriesChart'),
+        /*[[@{/explore/dataflows/{id}/series/{sid}/chart.json(id=${dataflow.id},sid=${seriesId},stage=${stage},asOf=${asOf})}]]*/ '', /*[[${seriesKey}]]*/ 'Series');
 </script>
 </body>
 </html>

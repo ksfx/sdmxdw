@@ -1,5 +1,7 @@
 package de.sdmxdw.web.structure;
 
+import de.sdmxdw.structure.annotation.AnnotationService;
+import de.sdmxdw.structure.annotation.AnnotationTarget;
 import de.sdmxdw.structure.categorisation.CategorisationService;
 import de.sdmxdw.structure.category.Category;
 import de.sdmxdw.structure.category.CategoryScheme;
@@ -25,12 +27,15 @@ public class DataflowController {
   private final DataStructureDefinitionService dsdService;
   private final CategorySchemeService categorySchemeService;
   private final CategorisationService categorisationService;
+  private final AnnotationService annotationService;
 
   public DataflowController(
       DataflowService dataflowService,
       DataStructureDefinitionService dsdService,
       CategorySchemeService categorySchemeService,
-      CategorisationService categorisationService) {
+      CategorisationService categorisationService,
+      AnnotationService annotationService) {
+    this.annotationService = annotationService;
     this.dataflowService = dataflowService;
     this.dsdService = dsdService;
     this.categorySchemeService = categorySchemeService;
@@ -87,6 +92,7 @@ public class DataflowController {
     model.addAttribute("dataflow", dataflow);
     model.addAttribute("categoryOptions", categoryOptions);
     model.addAttribute("currentCategoryLabel", currentCategoryLabel);
+    model.addAttribute("annotations", annotationService.find(AnnotationTarget.DATAFLOW, id));
     return "structure/dataflow-detail";
   }
 

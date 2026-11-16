@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<!--
+  Breadcrumb of the explorer pages: crumbs (List<Breadcrumbs.Crumb>, the last one without href is
+  the current page); alpha = true adds a badge when unpublished data is shown.
+-->
+<html xmlns:th="http://www.thymeleaf.org">
+<body>
+<nav th:fragment="crumbs(items, alpha)" class="breadcrumbs text-sm py-0 -mb-2" aria-label="Breadcrumb">
+    <ul>
+        <li th:each="c : ${items}">
+            <a th:if="${c.href != null}" th:href="${c.href}" th:title="${c.title}" th:text="${c.label}"></a>
+            <span th:if="${c.href == null}" class="font-semibold" th:title="${c.title}" th:text="${c.label}" aria-current="page"></span>
+        </li>
+        <li th:if="${alpha}"><span class="badge badge-warning badge-sm" title="Unpublished (Alpha) data">Alpha</span></li>
+    </ul>
+</nav>
+</body>
+</html>

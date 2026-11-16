@@ -1,9 +1,12 @@
 package de.sdmxdw.web.structure;
 
+import de.sdmxdw.structure.annotation.AnnotationService;
+import de.sdmxdw.structure.annotation.AnnotationTarget;
 import de.sdmxdw.structure.codelist.Code;
 import de.sdmxdw.structure.codelist.Codelist;
 import de.sdmxdw.structure.codelist.CodelistService;
 import java.util.Comparator;
+import java.util.List;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -17,8 +20,10 @@ import org.springframework.web.bind.annotation.RequestParam;
 public class CodelistController {
 
   private final CodelistService codelistService;
+  private final AnnotationService annotationService;
 
-  public CodelistController(CodelistService codelistService) {
+  public CodelistController(CodelistService codelistService, AnnotationService annotationService) {
+    this.annotationService = annotationService;
     this.codelistService = codelistService;
   }
 
@@ -44,6 +49,12 @@ public class CodelistController {
     model.addAttribute("codelist", codelist);
     model.addAttribute(
         "codes", codelist.codes().stream().sorted(Comparator.comparing(Code::code)).toList());
+    model.addAttribute("annotations", annotationService.find(AnnotationTarget.CODELIST, id));
+    var byCode =
+        annotationService.find(
+            AnnotationTarget.CODE, codelist.codes().stream().map(Code::id).toList());
+    codelist.codes().forEach(c -> byCode.putIfAbsent(c.id(), List.of()));
+    model.addAttribute("codeAnnotations", byCode);
     return "structure/codelist-detail";
   }
 

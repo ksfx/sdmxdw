@@ -7,25 +7,10 @@
     </div>
     <div class="mt-3"><form th:replace="~{explore/fragments/series-parts :: asOfForm}"></form></div>
     <div class="mt-3"><div th:replace="~{explore/fragments/series-parts :: stageSwitch}"></div></div>
-    <canvas id="seriesChart" class="mt-4" height="100"></canvas>
+    <div class="relative mt-4 w-full h-[clamp(14rem,32vh,20rem)]"><canvas id="seriesChart"></canvas></div>
     <table th:replace="~{explore/fragments/series-parts :: valueTable}"></table>
 </div>
 <script th:inline="javascript">
-    (function () {
-        const labels = /*[[${chartLabels}]]*/ [];
-        const values = /*[[${chartValues}]]*/ [];
-        const keyLabel = /*[[${seriesKey}]]*/ 'Series';
-        const asOfValues = /*[[${chartAsOfValues}]]*/ null;
-        const canvas = document.getElementById('seriesChart');
-        if (canvas && window.Chart) {
-            new Chart(canvas, {
-                type: 'line',
-                data: {
-                    labels: labels,
-                    datasets: [{label: keyLabel, data: values, borderColor: '#053771', tension: 0.1}].concat(
-                        asOfValues ? [{label: 'as of ' + /*[[${asOf}]]*/ '', data: asOfValues, borderColor: '#13ad8f', borderDash: [6, 4], tension: 0.1}] : [])
-                }
-            });
-        }
-    })();
+    window.SeriesChart && SeriesChart.init(document.getElementById('seriesChart'),
+        /*[[@{/explore/dataflows/{id}/series/{sid}/chart.json(id=${dataflow.id},sid=${seriesId},stage=${stage},asOf=${asOf})}]]*/ '', /*[[${seriesKey}]]*/ 'Series');
 </script>

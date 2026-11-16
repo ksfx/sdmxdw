@@ -1,11 +1,13 @@
 <!DOCTYPE html>
-<html lang="en" xmlns:th="http://www.thymeleaf.org" data-theme="sdmxdw">
+<html lang="en" xmlns:th="http://www.thymeleaf.org" xmlns:sec="http://www.thymeleaf.org/extras/spring-security" data-theme="sdmxdw">
 <head>
     <meta charset="UTF-8"/>
     <title>DSD</title>
     <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.23/dist/full.min.css" rel="stylesheet" type="text/css" />
     <link rel="stylesheet" href="/css/brand.css" />
-    <link rel="icon" href="/img/favicon.png" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/img/favicon-192.png" />
+    <link rel="apple-touch-icon" href="/img/apple-touch-icon.png" />
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="min-h-screen bg-base-200">
@@ -68,6 +70,13 @@
             </select>
             <button class="btn btn-primary" type="submit">Add</button>
         </form>
+    </div>
+    <div class="card bg-base-100 shadow-xl p-6">
+        <h2 class="font-bold">Annotations</h2>
+        <p class="text-xs opacity-60 mb-2">SDMX annotations, published with the structure. Layout annotations here apply to every dataflow of the DSD unless the dataflow has its own.</p>
+        <div th:if="${annotationFlash}" class="alert alert-success py-1 text-sm mb-2"><span th:text="${annotationFlash}"></span></div>
+        <div th:if="${annotationError}" class="alert alert-error py-1 text-sm mb-2"><span th:text="${annotationError}"></span></div>
+        <div th:replace="~{structure/fragments/annotations :: annotations('DSD', ${dsd.id}, ${annotations}, '/structures/dsds/' + ${dsd.id})}"></div>
     </div>
 </div>
 </body>

@@ -5,13 +5,16 @@
     <title th:text="${flow.artefactId}">Microdata flow</title>
     <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.23/dist/full.min.css" rel="stylesheet" type="text/css" />
     <link rel="stylesheet" href="/css/brand.css" />
-    <link rel="icon" href="/img/favicon.png" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/img/favicon-192.png" />
+    <link rel="apple-touch-icon" href="/img/apple-touch-icon.png" />
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="/js/dimension-filter.js"></script>
 </head>
 <body class="min-h-screen bg-base-200">
 <div th:replace="~{fragments/nav :: nav}"></div>
 <div class="p-8 space-y-6" th:with="alpha=${stage == 'ALPHA'}">
+    <nav th:replace="~{fragments/breadcrumb :: crumbs(${crumbs}, ${stage == 'ALPHA'})}"></nav>
 
     <!-- header: flow, stage switch, promotion and aggregation (Datenmanager) -->
     <div class="card bg-base-100 shadow-xl p-6">

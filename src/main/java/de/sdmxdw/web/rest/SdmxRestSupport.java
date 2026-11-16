@@ -1,5 +1,6 @@
 package de.sdmxdw.web.rest;
 
+import de.sdmxdw.structure.annotation.AnnotationService;
 import de.sdmxdw.structure.categorisation.CategorisationService;
 import de.sdmxdw.structure.category.CategorySchemeService;
 import de.sdmxdw.structure.codelist.CodelistService;
@@ -37,6 +38,7 @@ public class SdmxRestSupport {
   private final ConceptSchemeService conceptSchemeService;
   private final CategorySchemeService categorySchemeService;
   private final CategorisationService categorisationService;
+  private final AnnotationService annotationService;
 
   public SdmxRestSupport(
       DataflowService dataflowService,
@@ -44,13 +46,15 @@ public class SdmxRestSupport {
       CodelistService codelistService,
       ConceptSchemeService conceptSchemeService,
       CategorySchemeService categorySchemeService,
-      CategorisationService categorisationService) {
+      CategorisationService categorisationService,
+      AnnotationService annotationService) {
     this.dataflowService = dataflowService;
     this.dsdService = dsdService;
     this.codelistService = codelistService;
     this.conceptSchemeService = conceptSchemeService;
     this.categorySchemeService = categorySchemeService;
     this.categorisationService = categorisationService;
+    this.annotationService = annotationService;
   }
 
   StructureCatalog loadCatalog() {
@@ -60,7 +64,8 @@ public class SdmxRestSupport {
         codelistService.findAll(),
         conceptSchemeService.findAll(),
         categorySchemeService.findAll(),
-        categorisationService.findAll());
+        categorisationService.findAll(),
+        annotationService.findAll());
   }
 
   /**

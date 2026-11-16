@@ -1,11 +1,13 @@
 <!DOCTYPE html>
-<html lang="en" xmlns:th="http://www.thymeleaf.org" data-theme="sdmxdw">
+<html lang="en" xmlns:th="http://www.thymeleaf.org" xmlns:sec="http://www.thymeleaf.org/extras/spring-security" data-theme="sdmxdw">
 <head>
     <meta charset="UTF-8"/>
     <title>Codelist</title>
     <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.23/dist/full.min.css" rel="stylesheet" type="text/css" />
     <link rel="stylesheet" href="/css/brand.css" />
-    <link rel="icon" href="/img/favicon.png" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/img/favicon-192.png" />
+    <link rel="apple-touch-icon" href="/img/apple-touch-icon.png" />
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="min-h-screen bg-base-200">
@@ -15,17 +17,40 @@
         <h1 class="text-xl font-bold" th:text="${codelist.agencyId} + ':' + ${codelist.artefactId} + '(' + ${codelist.version} + ')'"></h1>
         <p class="text-lg" th:text="${codelist.name}"></p>
         <table class="table mt-4">
-            <thead><tr><th>Code</th><th>Name</th><th>Description</th></tr></thead>
+            <thead><tr><th>Code</th><th>Name</th><th>Description</th><th>Annotations</th></tr></thead>
             <tbody>
-            <tr th:each="code : ${codes}" th:id="'code-' + ${code.code}">
+            <th:block th:each="code : ${codes}" th:with="ca=${codeAnnotations.get(code.id)}">
+            <tr th:id="'code-' + ${code.code}">
                 <td class="font-mono" th:text="${code.code}"></td>
                 <td th:text="${code.name}"></td>
                 <td class="text-sm opacity-80" th:text="${code.description} ?: ''"></td>
+                <td class="whitespace-nowrap">
+                    <span th:each="a : ${ca}" class="badge badge-sm badge-outline mr-1 font-mono"
+                          th:title="${a.title} ?: ${a.text}" th:text="${a.annotationType} ?: 'annotation'"></span>
+                    <button type="button" class="btn btn-ghost btn-xs btn-square text-primary" sec:authorize="hasRole('DATENMANAGER')"
+                            title="Annotations of this code" aria-label="Annotations of this code"
+                            th:attr="onclick='document.getElementById(\'code-annotations-' + ${code.code} + '\').classList.toggle(\'hidden\')'">
+                        <span th:replace="~{fragments/icons :: icon('pencil')}"></span></button>
+                </td>
             </tr>
+            <tr th:id="'code-annotations-' + ${code.code}" class="hidden">
+                <td colspan="4" class="bg-base-200">
+                    <div th:replace="~{structure/fragments/annotations :: annotations('CODE', ${code.id}, ${ca}, '/structures/codelists/' + ${codelist.id} + '#code-' + ${code.code})}"></div>
+                </td>
+            </tr>
+            </th:block>
             </tbody>
         </table>
     </div>
 
+
+    <div class="card bg-base-100 shadow-xl p-6">
+        <h2 class="font-bold">Annotations</h2>
+        <p class="text-xs opacity-60 mb-2">SDMX annotations, published with the structure. Annotations of single codes (e.g. <code>DEFAULT</code>, <code>NOT_DISPLAYED</code>, <code>ORDER</code>) are edited in the code table above.</p>
+        <div th:if="${annotationFlash}" class="alert alert-success py-1 text-sm mb-2"><span th:text="${annotationFlash}"></span></div>
+        <div th:if="${annotationError}" class="alert alert-error py-1 text-sm mb-2"><span th:text="${annotationError}"></span></div>
+        <div th:replace="~{structure/fragments/annotations :: annotations('CODELIST', ${codelist.id}, ${annotations}, '/structures/codelists/' + ${codelist.id})}"></div>
+    </div>
     <div class="card bg-base-100 shadow-xl p-6 max-w-lg">
         <h2 class="font-bold mb-4">Add code</h2>
         <form method="post" th:action="@{/structures/codelists/{id}/codes(id=${codelist.id})}" class="space-y-2">
@@ -36,5 +61,12 @@
         </form>
     </div>
 </div>
+<script>
+    // back from saving an annotation of a code: show that code's annotations again
+    if (location.hash.startsWith('#code-')) {
+        const row = document.getElementById('code-annotations-' + decodeURIComponent(location.hash.slice(6)));
+        if (row) row.classList.remove('hidden');
+    }
+</script>
 </body>
 </html>

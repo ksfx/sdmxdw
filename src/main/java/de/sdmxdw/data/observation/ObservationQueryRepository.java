@@ -187,6 +187,187 @@ public class ObservationQueryRepository {
     }
   }
 
+  // --- one series (#27: long series page by page) ------------------------------------------------
+
+  /**
+   * A period of one series: its values, and for Alpha whether it is deleted but still published.
+   */
+  public record SeriesValue(String timePeriod, String measureValuesJson, boolean deleted) {}
+
+  private static String seriesRows(ObservationStage stage) {
+    String current =
+        "SELECT time_period, measure_values_json, false AS deleted FROM observation"
+            + " WHERE dataflow_id = :df AND series_id = :sid AND stage = :stage AND valid_to IS NULL";
+    return stage == ObservationStage.BETA
+        ? current
+        : current
+            // deleted in Alpha, still published (#25)
+            + " UNION ALL SELECT b.time_period, b.measure_values_json, true FROM observation b"
+            + " WHERE b.dataflow_id = :df AND b.series_id = :sid AND b.stage = 'BETA'"
+            + " AND b.valid_to IS NULL AND NOT EXISTS (SELECT 1 FROM observation a"
+            + " WHERE a.dataflow_id = :df AND a.series_id = :sid AND a.time_period = b.time_period"
+            + " AND a.stage = 'ALPHA' AND a.valid_to IS NULL)";
+  }
+
+  /** One page of a series' current periods, latest first. */
+  public List<SeriesValue> seriesPage(
+      Long dataflowId, Long seriesId, ObservationStage stage, int limit, int offset) {
+    return jdbc.query(
+        "SELECT * FROM ("
+            + seriesRows(stage)
+            + ") r ORDER BY time_period DESC LIMIT :limit OFFSET :offset",
+        new MapSqlParameterSource("df", dataflowId)
+            .addValue("sid", seriesId)
+            .addValue("stage", stage.name())
+            .addValue("limit", limit)
+            .addValue("offset", offset),
+        (rs, i) ->
+            new SeriesValue(
+                rs.getString("time_period"),
+                rs.getString("measure_values_json"),
+                rs.getBoolean("deleted")));
+  }
+
+  /** Number of periods {@link #seriesPage} pages through. */
+  public int countSeriesPeriods(Long dataflowId, Long seriesId, ObservationStage stage) {
+    Integer n =
+        jdbc.queryForObject(
+            "SELECT count(*) FROM (" + seriesRows(stage) + ") r",
+            new MapSqlParameterSource("df", dataflowId)
+                .addValue("sid", seriesId)
+                .addValue("stage", stage.name()),
+            Integer.class);
+    return n == null ? 0 : n;
+  }
+
+  /** The values of some periods, current or as of an instant: period -> measure values JSON. */
+  public Map<String, String> seriesValuesAt(
+      Long dataflowId,
+      Long seriesId,
+      ObservationStage stage,
+      Collection<String> periods,
+      java.time.Instant asOf) {
+    Map<String, String> result = new java.util.HashMap<>();
+    if (periods.isEmpty()) {
+      return result;
+    }
+    MapSqlParameterSource p =
+        new MapSqlParameterSource("df", dataflowId)
+            .addValue("sid", seriesId)
+            .addValue("stage", stage.name())
+            .addValue("periods", periods);
+    String validity = " AND valid_to IS NULL";
+    if (asOf != null) {
+      validity = " AND valid_from <= :asOf AND (valid_to IS NULL OR valid_to > :asOf)";
+      p.addValue("asOf", java.sql.Timestamp.from(asOf));
+    }
+    jdbc.query(
+        "SELECT time_period, measure_values_json FROM observation WHERE dataflow_id = :df"
+            + " AND series_id = :sid AND stage = :stage AND time_period IN (:periods)"
+            + validity,
+        p,
+        rs -> {
+          result.put(rs.getString(1), rs.getString(2));
+        });
+    return result;
+  }
+
+  /**
+   * Distinct successive values per period (1 = never revised); identical successive vintages from
+   * unchanged re-deliveries count once. {@code periods} null = all periods.
+   */
+  public Map<String, Integer> revisionCounts(
+      Long dataflowId, Long seriesId, ObservationStage stage, Collection<String> periods) {
+    MapSqlParameterSource p =
+        new MapSqlParameterSource("df", dataflowId)
+            .addValue("sid", seriesId)
+            .addValue("stage", stage.name());
+    String only = "";
+    if (periods != null) {
+      if (periods.isEmpty()) {
+        return Map.of();
+      }
+      only = " AND time_period IN (:periods)";
+      p.addValue("periods", periods);
+    }
+    Map<String, Integer> result = new java.util.HashMap<>();
+    jdbc.query(
+        "SELECT time_period, count(*) FILTER (WHERE prev IS DISTINCT FROM v) FROM ("
+            + "SELECT time_period, measure_values_json AS v, lag(measure_values_json)"
+            + " OVER (PARTITION BY time_period ORDER BY valid_from) AS prev FROM observation"
+            + " WHERE dataflow_id = :df AND series_id = :sid AND stage = :stage"
+            + only
+            + ") x GROUP BY 1",
+        p,
+        rs -> {
+          result.put(rs.getString(1), rs.getInt(2));
+        });
+    return result;
+  }
+
+  /** Periods of one series a promotion would change (new, changed or deleted in Alpha). */
+  public int countSeriesPending(Long dataflowId, Long seriesId) {
+    Integer n =
+        jdbc.queryForObject(
+            "SELECT count(*) FROM ("
+                + "SELECT a.time_period FROM observation a LEFT JOIN observation b"
+                + " ON b.dataflow_id = :df AND b.series_id = :sid AND b.time_period = a.time_period"
+                + " AND b.stage = 'BETA' AND b.valid_to IS NULL"
+                + " WHERE a.dataflow_id = :df AND a.series_id = :sid AND a.stage = 'ALPHA'"
+                + " AND a.valid_to IS NULL"
+                + " AND b.measure_values_json IS DISTINCT FROM a.measure_values_json"
+                + " UNION ALL SELECT b.time_period FROM observation b"
+                + " WHERE b.dataflow_id = :df AND b.series_id = :sid AND b.stage = 'BETA'"
+                + " AND b.valid_to IS NULL AND NOT EXISTS (SELECT 1 FROM observation a"
+                + " WHERE a.dataflow_id = :df AND a.series_id = :sid"
+                + " AND a.time_period = b.time_period AND a.stage = 'ALPHA' AND a.valid_to IS NULL)"
+                + ") x",
+            new MapSqlParameterSource("df", dataflowId).addValue("sid", seriesId),
+            Integer.class);
+    return n == null ? 0 : n;
+  }
+
+  /**
+   * One measure of a series for the chart, ascending: [period, value] - current or as of an
+   * instant, read out of the JSON in SQL.
+   */
+  public List<String[]> seriesChart(
+      Long dataflowId,
+      Long seriesId,
+      ObservationStage stage,
+      Long measureId,
+      java.time.Instant asOf) {
+    MapSqlParameterSource p =
+        new MapSqlParameterSource("df", dataflowId)
+            .addValue("sid", seriesId)
+            .addValue("stage", stage.name())
+            .addValue("m", String.valueOf(measureId));
+    String validity = " AND valid_to IS NULL";
+    if (asOf != null) {
+      validity = " AND valid_from <= :asOf AND (valid_to IS NULL OR valid_to > :asOf)";
+      p.addValue("asOf", java.sql.Timestamp.from(asOf));
+    }
+    return jdbc.query(
+        "SELECT time_period, measure_values_json::jsonb ->> :m FROM observation"
+            + " WHERE dataflow_id = :df AND series_id = :sid AND stage = :stage"
+            + validity
+            + " ORDER BY time_period",
+        p,
+        (rs, i) -> new String[] {rs.getString(1), rs.getString(2)});
+  }
+
+  /** Time periods with current observations in the stage under the key filters, ascending. */
+  public List<String> timePeriods(
+      Long dataflowId, ObservationStage stage, Map<Integer, List<String>> keyFilters) {
+    MapSqlParameterSource params = new MapSqlParameterSource();
+    return jdbc.queryForList(
+        "SELECT DISTINCT o.time_period"
+            + where(dataflowId, List.of(stage), keyFilters, null, null, null, params)
+            + " ORDER BY 1",
+        params,
+        String.class);
+  }
+
   /**
    * Facet counts for one key dimension: code -> number of series with current observations in the
    * stage, applying all other selections (the caller leaves out the dimension's own selection so

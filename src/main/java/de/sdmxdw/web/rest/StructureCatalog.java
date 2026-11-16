@@ -1,5 +1,8 @@
 package de.sdmxdw.web.rest;
 
+import de.sdmxdw.structure.annotation.Annotation;
+import de.sdmxdw.structure.annotation.AnnotationService;
+import de.sdmxdw.structure.annotation.AnnotationTarget;
 import de.sdmxdw.structure.categorisation.Categorisation;
 import de.sdmxdw.structure.category.Category;
 import de.sdmxdw.structure.category.CategoryScheme;
@@ -46,6 +49,7 @@ final class StructureCatalog {
   final Map<Long, ConceptScheme> conceptSchemes;
   final Map<Long, CategoryScheme> categorySchemes;
   final Map<Long, Categorisation> categorisations;
+  private final Map<AnnotationService.Key, List<Annotation>> annotations;
   private final Map<Long, ConceptScheme> schemeByConceptId = new HashMap<>();
   private final Map<Long, Concept> conceptById = new HashMap<>();
   private final Map<Long, CategoryScheme> schemeByCategoryId = new HashMap<>();
@@ -56,7 +60,9 @@ final class StructureCatalog {
       Collection<Codelist> codelists,
       Collection<ConceptScheme> conceptSchemes,
       Collection<CategoryScheme> categorySchemes,
-      Collection<Categorisation> categorisations) {
+      Collection<Categorisation> categorisations,
+      Map<AnnotationService.Key, List<Annotation>> annotations) {
+    this.annotations = annotations;
     this.dataflows = byId(dataflows, Dataflow::id);
     this.dsds = byId(dsds, DataStructureDefinition::id);
     this.codelists = byId(codelists, Codelist::id);
@@ -266,5 +272,10 @@ final class StructureCatalog {
 
   static boolean sameIds(String[] a, String[] b) {
     return Objects.equals(a[0], b[0]) && Objects.equals(a[1], b[1]);
+  }
+
+  /** SDMX annotations of one artefact (#15), empty if it has none. */
+  List<Annotation> annotations(AnnotationTarget type, Long id) {
+    return annotations.getOrDefault(new AnnotationService.Key(type, id), List.of());
   }
 }

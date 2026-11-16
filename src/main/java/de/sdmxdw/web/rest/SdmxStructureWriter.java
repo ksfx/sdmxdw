@@ -1,5 +1,7 @@
 package de.sdmxdw.web.rest;
 
+import de.sdmxdw.structure.annotation.Annotation;
+import de.sdmxdw.structure.annotation.AnnotationTarget;
 import de.sdmxdw.structure.categorisation.Categorisation;
 import de.sdmxdw.structure.category.Category;
 import de.sdmxdw.structure.category.CategoryScheme;
@@ -127,7 +129,14 @@ final class SdmxStructureWriter {
 
   private void codelist(Codelist cl) {
     String urn = urn("codelist.Codelist", cl.agencyId(), cl.artefactId(), cl.version());
-    open("Codelist", cl.agencyId(), cl.artefactId(), cl.version(), urn, cl.name());
+    open(
+        "Codelist",
+        cl.agencyId(),
+        cl.artefactId(),
+        cl.version(),
+        urn,
+        cl.name(),
+        catalog.annotations(AnnotationTarget.CODELIST, cl.id()));
     cl.codes().stream()
         .sorted(Comparator.comparing(Code::code))
         .forEach(
@@ -137,6 +146,7 @@ final class SdmxStructureWriter {
                   .append("\" urn=\"")
                   .append(esc(urn.replace(".Codelist=", ".Code=") + "." + c.code()))
                   .append("\">");
+              annotations(catalog.annotations(AnnotationTarget.CODE, c.id()));
               name(c.name());
               description(c.description());
               xml.append("</str:Code>\n");
@@ -146,7 +156,14 @@ final class SdmxStructureWriter {
 
   private void conceptScheme(ConceptScheme cs) {
     String urn = urn("conceptscheme.ConceptScheme", cs.agencyId(), cs.artefactId(), cs.version());
-    open("ConceptScheme", cs.agencyId(), cs.artefactId(), cs.version(), urn, cs.name());
+    open(
+        "ConceptScheme",
+        cs.agencyId(),
+        cs.artefactId(),
+        cs.version(),
+        urn,
+        cs.name(),
+        catalog.annotations(AnnotationTarget.CONCEPT_SCHEME, cs.id()));
     cs.concepts().stream()
         .sorted(Comparator.comparing(Concept::code))
         .forEach(
@@ -156,6 +173,7 @@ final class SdmxStructureWriter {
                   .append("\" urn=\"")
                   .append(esc(conceptUrn(c.id())))
                   .append("\">");
+              annotations(catalog.annotations(AnnotationTarget.CONCEPT, c.id()));
               name(c.name());
               xml.append("</str:Concept>\n");
             });
@@ -164,7 +182,14 @@ final class SdmxStructureWriter {
 
   private void categoryScheme(CategoryScheme cs) {
     String urn = urn("categoryscheme.CategoryScheme", cs.agencyId(), cs.artefactId(), cs.version());
-    open("CategoryScheme", cs.agencyId(), cs.artefactId(), cs.version(), urn, cs.name());
+    open(
+        "CategoryScheme",
+        cs.agencyId(),
+        cs.artefactId(),
+        cs.version(),
+        urn,
+        cs.name(),
+        catalog.annotations(AnnotationTarget.CATEGORY_SCHEME, cs.id()));
     Map<Long, List<Category>> byParent =
         cs.categories().stream()
             .collect(
@@ -187,6 +212,7 @@ final class SdmxStructureWriter {
           .append("\" urn=\"")
           .append(esc(urn))
           .append("\">");
+      annotations(catalog.annotations(AnnotationTarget.CATEGORY, c.id()));
       name(c.name());
       xml.append('\n');
       categories(byParent, c.id(), urn + ".", indent + "  ");
@@ -196,7 +222,14 @@ final class SdmxStructureWriter {
 
   private void dataflow(Dataflow df) {
     String urn = urn("datastructure.Dataflow", df.agencyId(), df.artefactId(), df.version());
-    open("Dataflow", df.agencyId(), df.artefactId(), df.version(), urn, df.name());
+    open(
+        "Dataflow",
+        df.agencyId(),
+        df.artefactId(),
+        df.version(),
+        urn,
+        df.name(),
+        catalog.annotations(AnnotationTarget.DATAFLOW, df.id()));
     DataStructureDefinition dsd = catalog.dsds.get(df.dsdId());
     xml.append("        <str:Structure>");
     if (version == Version.V2_1) {
@@ -220,7 +253,8 @@ final class SdmxStructureWriter {
         id,
         "1.0",
         urn,
-        df.artefactId() + " in " + scheme.artefactId());
+        df.artefactId() + " in " + scheme.artefactId(),
+        List.of());
     String path = String.join(".", catalog.categoryPath(c.categoryId()));
     if (version == Version.V2_1) {
       xml.append("        <str:Source>");
@@ -256,7 +290,14 @@ final class SdmxStructureWriter {
     String urn =
         urn("datastructure.DataStructure", dsd.agencyId(), dsd.artefactId(), dsd.version());
     String componentUrn = urn.replace(".DataStructure=", ".%s=") + ".%s";
-    open("DataStructure", dsd.agencyId(), dsd.artefactId(), dsd.version(), urn, dsd.name());
+    open(
+        "DataStructure",
+        dsd.agencyId(),
+        dsd.artefactId(),
+        dsd.version(),
+        urn,
+        dsd.name(),
+        catalog.annotations(AnnotationTarget.DSD, dsd.id()));
     xml.append("        <str:DataStructureComponents>\n");
     xml.append("          <str:DimensionList id=\"DimensionDescriptor\" urn=\"")
         .append(esc(componentUrn.formatted("DimensionDescriptor", "DimensionDescriptor")))
@@ -276,6 +317,13 @@ final class SdmxStructureWriter {
           .append("\" urn=\"")
           .append(esc(componentUrn.formatted(element, code)))
           .append("\">\n");
+      List<Annotation> dimensionAnnotations =
+          catalog.annotations(AnnotationTarget.DIMENSION, d.id());
+      if (!dimensionAnnotations.isEmpty()) {
+        xml.append("              ");
+        annotations(dimensionAnnotations);
+        xml.append('\n');
+      }
       conceptIdentity(d.conceptId());
       xml.append("              <str:LocalRepresentation>");
       if (time) {
@@ -362,7 +410,14 @@ final class SdmxStructureWriter {
 
   // --- helpers ---------------------------------------------------------------------------------
 
-  private void open(String element, String agency, String id, String ver, String urn, String name) {
+  private void open(
+      String element,
+      String agency,
+      String id,
+      String ver,
+      String urn,
+      String name,
+      List<Annotation> annotations) {
     xml.append("      <str:")
         .append(element)
         .append(" id=\"")
@@ -378,8 +433,45 @@ final class SdmxStructureWriter {
       xml.append(" isFinal=\"false\"");
     }
     xml.append(">\n        ");
+    annotations(annotations);
     name(name);
     xml.append('\n');
+  }
+
+  /**
+   * com:Annotations (#15), the first child of every annotable artefact. Children in schema order:
+   * AnnotationTitle, AnnotationType, AnnotationURL, AnnotationText.
+   */
+  private void annotations(List<Annotation> annotations) {
+    if (annotations.isEmpty()) {
+      return;
+    }
+    xml.append("<com:Annotations>");
+    for (Annotation a : annotations) {
+      xml.append("<com:Annotation");
+      if (a.annotationId() != null) {
+        xml.append(" id=\"").append(esc(a.annotationId())).append('"');
+      }
+      xml.append('>');
+      if (a.title() != null) {
+        xml.append("<com:AnnotationTitle>").append(esc(a.title())).append("</com:AnnotationTitle>");
+      }
+      if (a.annotationType() != null) {
+        xml.append("<com:AnnotationType>")
+            .append(esc(a.annotationType()))
+            .append("</com:AnnotationType>");
+      }
+      if (a.url() != null) {
+        xml.append("<com:AnnotationURL>").append(esc(a.url())).append("</com:AnnotationURL>");
+      }
+      if (a.text() != null) {
+        xml.append("<com:AnnotationText xml:lang=\"en\">")
+            .append(esc(a.text()))
+            .append("</com:AnnotationText>");
+      }
+      xml.append("</com:Annotation>");
+    }
+    xml.append("</com:Annotations>");
   }
 
   private void close(String element) {

@@ -5,6 +5,8 @@ import de.sdmxdw.data.observation.Observation;
 import de.sdmxdw.data.observation.ObservationQueryRepository.PendingChange;
 import de.sdmxdw.data.observation.ObservationService;
 import de.sdmxdw.data.observation.ObservationStage;
+import de.sdmxdw.structure.annotation.AnnotationService;
+import de.sdmxdw.structure.annotation.AnnotationTarget;
 import de.sdmxdw.structure.codelist.Code;
 import de.sdmxdw.structure.codelist.CodelistService;
 import de.sdmxdw.structure.conceptscheme.ConceptSchemeService;
@@ -19,6 +21,7 @@ import de.sdmxdw.web.ConceptCodes;
 import de.sdmxdw.web.ConceptLabels;
 import de.sdmxdw.web.KeyFilters;
 import de.sdmxdw.web.Roles;
+import jakarta.servlet.http.HttpServletResponse;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -59,6 +62,7 @@ public class ExploreDataflowController {
   /** Tabs of the dataflow page; pending and activity are for Datenmanager only. */
   enum View {
     series,
+    table,
     pending,
     activity
   }
@@ -69,6 +73,9 @@ public class ExploreDataflowController {
   private final CodelistService codelistService;
   private final ObservationService observationService;
   private final AuditLogService auditLogService;
+  private final PivotTableService pivotTables;
+  private final Breadcrumbs breadcrumbs;
+  private final AnnotationService annotationService;
 
   public ExploreDataflowController(
       DataflowService dataflowService,
@@ -76,7 +83,13 @@ public class ExploreDataflowController {
       ConceptSchemeService conceptSchemeService,
       CodelistService codelistService,
       ObservationService observationService,
-      AuditLogService auditLogService) {
+      AuditLogService auditLogService,
+      PivotTableService pivotTables,
+      Breadcrumbs breadcrumbs,
+      AnnotationService annotationService) {
+    this.pivotTables = pivotTables;
+    this.breadcrumbs = breadcrumbs;
+    this.annotationService = annotationService;
     this.dataflowService = dataflowService;
     this.dsdService = dsdService;
     this.conceptSchemeService = conceptSchemeService;
@@ -98,9 +111,13 @@ public class ExploreDataflowController {
       @RequestParam MultiValueMap<String, String> params,
       Model model) {
     boolean dm = Roles.isDatenmanager();
-    View selectedView = parseView(view, dm);
-    ObservationStage selectedStage = parseStage(stage, dm);
     Context ctx = context(dataflowId);
+    // a dataflow with a table layout opens as table (#15)
+    View selectedView =
+        view == null && hasTableLayout(ctx.dataflow(), ctx.dsd())
+            ? View.table
+            : parseView(view, dm);
+    ObservationStage selectedStage = parseStage(stage, dm);
     KeyFilters.Selection selection = ctx.selection(params);
 
     MultiValueMap<String, String> keep = new LinkedMultiValueMap<>(params);
@@ -119,6 +136,9 @@ public class ExploreDataflowController {
     otherStage.set("stage", selectedStage == ObservationStage.BETA ? "ALPHA" : "BETA");
 
     model.addAttribute("dataflow", ctx.dataflow());
+    List<Breadcrumbs.Crumb> crumbs = new ArrayList<>(breadcrumbs.forDataflow(dataflowId));
+    crumbs.add(new Breadcrumbs.Crumb(ctx.dataflow().artefactId(), ctx.dataflow().name(), null));
+    model.addAttribute("crumbs", crumbs);
     model.addAttribute("isDatenmanager", dm);
     model.addAttribute("view", selectedView.name());
     model.addAttribute("stage", selectedStage.name());
@@ -173,6 +193,8 @@ public class ExploreDataflowController {
           model.addAttribute("measureFields", ctx.measureFields());
         }
       }
+      case table ->
+          model.addAttribute("table", pivotTables.build(dataflowId, selectedStage, params));
       case pending -> {
         ObservationService.PendingPage result =
             observationService.findPendingChanges(
@@ -283,6 +305,44 @@ public class ExploreDataflowController {
     return new Facets.Response(total, dimensions);
   }
 
+  // --- table view export (#15) ------------------------------------------------------------------
+
+  /** The table as shown, as CSV: row dimensions and section as columns, one column per column. */
+  @GetMapping(value = "/table.csv", produces = "text/csv")
+  public void tableCsv(
+      @PathVariable Long dataflowId,
+      @RequestParam(required = false) String stage,
+      @RequestParam MultiValueMap<String, String> params,
+      HttpServletResponse response)
+      throws java.io.IOException {
+    PivotTableService.PivotTable t =
+        pivotTables.build(dataflowId, parseStage(stage, Roles.isDatenmanager()), params);
+    response.setContentType("text/csv;charset=UTF-8");
+    response.setHeader(
+        "Content-Disposition",
+        "attachment; filename=\"" + t.dataflow().artefactId() + "-table.csv\"");
+    java.io.PrintWriter out = response.getWriter();
+    for (List<String> line : PivotTableExport.lines(t)) {
+      out.println(line.stream().map(PivotTableExport::csv).collect(Collectors.joining(",")));
+    }
+  }
+
+  @GetMapping("/table.xlsx")
+  public void tableXlsx(
+      @PathVariable Long dataflowId,
+      @RequestParam(required = false) String stage,
+      @RequestParam MultiValueMap<String, String> params,
+      HttpServletResponse response)
+      throws java.io.IOException {
+    PivotTableService.PivotTable t =
+        pivotTables.build(dataflowId, parseStage(stage, Roles.isDatenmanager()), params);
+    response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    response.setHeader(
+        "Content-Disposition",
+        "attachment; filename=\"" + t.dataflow().artefactId() + "-table.xlsx\"");
+    PivotTableExport.xlsx(t, response.getOutputStream());
+  }
+
   // --- new series (#25) ------------------------------------------------------------------------
 
   /** Creates a series with its first period in Alpha and opens it. */
@@ -332,6 +392,17 @@ public class ExploreDataflowController {
           }
         });
     return values;
+  }
+
+  /** LAYOUT_ROW or LAYOUT_COLUMN on the dataflow or its DSD. */
+  private boolean hasTableLayout(Dataflow dataflow, DataStructureDefinition dsd) {
+    return java.util.stream.Stream.concat(
+            annotationService.find(AnnotationTarget.DATAFLOW, dataflow.id()).stream(),
+            annotationService.find(AnnotationTarget.DSD, dsd.id()).stream())
+        .anyMatch(
+            a ->
+                "LAYOUT_ROW".equalsIgnoreCase(a.annotationType())
+                    || "LAYOUT_COLUMN".equalsIgnoreCase(a.annotationType()));
   }
 
   private static View parseView(String view, boolean dm) {

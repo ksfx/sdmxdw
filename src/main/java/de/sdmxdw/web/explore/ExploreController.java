@@ -8,22 +8,17 @@ import de.sdmxdw.structure.categorisation.CategorisationService;
 import de.sdmxdw.structure.category.Category;
 import de.sdmxdw.structure.category.CategoryScheme;
 import de.sdmxdw.structure.category.CategorySchemeService;
-import de.sdmxdw.structure.codelist.Code;
-import de.sdmxdw.structure.codelist.Codelist;
 import de.sdmxdw.structure.codelist.CodelistService;
-import de.sdmxdw.structure.conceptscheme.ConceptScheme;
 import de.sdmxdw.structure.conceptscheme.ConceptSchemeService;
 import de.sdmxdw.structure.dataflow.Dataflow;
 import de.sdmxdw.structure.dataflow.DataflowService;
 import de.sdmxdw.structure.dsd.DataStructureDefinition;
 import de.sdmxdw.structure.dsd.DataStructureDefinitionService;
 import de.sdmxdw.structure.dsd.DataType;
-import de.sdmxdw.structure.dsd.Dimension;
 import de.sdmxdw.structure.dsd.Measure;
 import de.sdmxdw.web.AsOf;
 import de.sdmxdw.web.ConceptLabels;
 import de.sdmxdw.web.MarkdownRenderer;
-import de.sdmxdw.web.Roles;
 import de.sdmxdw.web.rest.SdmxDataWriter;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
@@ -32,20 +27,16 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.xssf.usermodel.XSSFSheet;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
-import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 
@@ -62,6 +53,8 @@ public class ExploreController {
   private final ObservationService observationService;
   private final CodelistService codelistService;
   private final MarkdownRenderer markdownRenderer;
+  private final Breadcrumbs breadcrumbs;
+  private final SeriesStructure structure;
 
   public ExploreController(
       CategorySchemeService categorySchemeService,
@@ -71,7 +64,11 @@ public class ExploreController {
       ConceptSchemeService conceptSchemeService,
       ObservationService observationService,
       CodelistService codelistService,
-      MarkdownRenderer markdownRenderer) {
+      MarkdownRenderer markdownRenderer,
+      Breadcrumbs breadcrumbs,
+      SeriesStructure structure) {
+    this.breadcrumbs = breadcrumbs;
+    this.structure = structure;
     this.codelistService = codelistService;
     this.markdownRenderer = markdownRenderer;
     this.categorySchemeService = categorySchemeService;
@@ -119,6 +116,7 @@ public class ExploreController {
     Category category = findCategory(categoryId);
     model.addAttribute("category", category);
     model.addAttribute("dataflows", dataflowsForCategory(categoryId));
+    model.addAttribute("crumbs", breadcrumbs.forCategory(categoryId));
     return "explore/category";
   }
 
@@ -126,30 +124,6 @@ public class ExploreController {
   public String categoryDataflowsFragment(@PathVariable Long categoryId, Model model) {
     model.addAttribute("dataflows", dataflowsForCategory(categoryId));
     return "explore/fragments/category-dataflows";
-  }
-
-  @GetMapping("/dataflows/{dataflowId}/series/{seriesId}")
-  public String series(
-      @PathVariable Long dataflowId,
-      @PathVariable Long seriesId,
-      @RequestParam(required = false) String asOf,
-      @RequestParam(required = false) String stage,
-      Model model) {
-    populateSeriesModel(dataflowId, seriesId, asOf, stage, model);
-    model.addAttribute("panelMode", false);
-    return "explore/series";
-  }
-
-  @GetMapping("/dataflows/{dataflowId}/series/{seriesId}/panel")
-  public String seriesPanel(
-      @PathVariable Long dataflowId,
-      @PathVariable Long seriesId,
-      @RequestParam(required = false) String asOf,
-      @RequestParam(required = false) String stage,
-      Model model) {
-    populateSeriesModel(dataflowId, seriesId, asOf, stage, model);
-    model.addAttribute("panelMode", true);
-    return "explore/fragments/series-panel";
   }
 
   /**
@@ -165,422 +139,6 @@ public class ExploreController {
     return categorisationService.findByCategoryId(categoryId).stream()
         .map(c -> dataflowService.findById(c.dataflowId()))
         .toList();
-  }
-
-  /** Value table alone (htmx): used after saving and by "Cancel" of the value editor. */
-  @GetMapping("/dataflows/{dataflowId}/series/{seriesId}/value-table")
-  public String valueTable(
-      @PathVariable Long dataflowId,
-      @PathVariable Long seriesId,
-      @RequestParam(required = false) String asOf,
-      @RequestParam(required = false) String stage,
-      @RequestParam(defaultValue = "false") boolean panelMode,
-      Model model) {
-    populateSeriesModel(dataflowId, seriesId, asOf, stage, model);
-    model.addAttribute("panelMode", panelMode);
-    return "explore/fragments/series-parts :: valueTable";
-  }
-
-  /** Inline editor for one time period of the value table (Datenmanager, Alpha view). */
-  @GetMapping("/dataflows/{dataflowId}/series/{seriesId}/edit-value")
-  public String editValue(
-      @PathVariable Long dataflowId,
-      @PathVariable Long seriesId,
-      @RequestParam String timePeriod,
-      @RequestParam(required = false) String asOf,
-      @RequestParam(defaultValue = "false") boolean panelMode,
-      Model model) {
-    populateSeriesModel(dataflowId, seriesId, asOf, ObservationStage.ALPHA.name(), model);
-    // a period deleted in Alpha but still published is restored from its published value
-    Observation current =
-        observationService
-            .findCurrentOne(dataflowId, seriesId, timePeriod, ObservationStage.ALPHA)
-            .or(
-                () ->
-                    observationService.findCurrentOne(
-                        dataflowId, seriesId, timePeriod, ObservationStage.BETA))
-            .orElseThrow();
-    Map<Long, String> values = observationService.parseMeasureValues(current.measureValuesJson());
-    @SuppressWarnings("unchecked")
-    List<Long> measureIds = (List<Long>) model.getAttribute("measureIds");
-    model.addAttribute("editPeriod", timePeriod);
-    model.addAttribute(
-        "editValues", measureIds.stream().map(id -> values.getOrDefault(id, "")).toList());
-    model.addAttribute("panelMode", panelMode);
-    return "explore/fragments/series-parts :: valueTable";
-  }
-
-  @PostMapping("/dataflows/{dataflowId}/series/{seriesId}/correct")
-  public String correctValue(
-      @PathVariable Long dataflowId,
-      @PathVariable Long seriesId,
-      @RequestParam String timePeriod,
-      @RequestParam(required = false) String comment,
-      @RequestParam(required = false) String asOf,
-      @RequestParam(defaultValue = "false") boolean panelMode,
-      @RequestParam Map<String, String> allParams,
-      Authentication authentication,
-      Model model) {
-    Map<Long, String> measureValues = new HashMap<>();
-    allParams.forEach(
-        (key, value) -> {
-          if (key.startsWith("measure_")) {
-            measureValues.put(Long.valueOf(key.substring(8)), value);
-          }
-        });
-    observationService.correctObservation(
-        dataflowId, seriesId, timePeriod, measureValues, comment, authentication.getName());
-    populateSeriesModel(dataflowId, seriesId, asOf, ObservationStage.ALPHA.name(), model);
-    model.addAttribute("savedPeriod", timePeriod);
-    model.addAttribute("panelMode", panelMode);
-    return "explore/fragments/series-parts :: valueTable";
-  }
-
-  /** Inline form to add a period to the series (Datenmanager, Alpha view; #25). */
-  @GetMapping("/dataflows/{dataflowId}/series/{seriesId}/add-value")
-  public String addValueForm(
-      @PathVariable Long dataflowId,
-      @PathVariable Long seriesId,
-      @RequestParam(required = false) String asOf,
-      @RequestParam(defaultValue = "false") boolean panelMode,
-      Model model) {
-    populateSeriesModel(dataflowId, seriesId, asOf, ObservationStage.ALPHA.name(), model);
-    model.addAttribute("addRow", true);
-    model.addAttribute("panelMode", panelMode);
-    return "explore/fragments/series-parts :: valueTable";
-  }
-
-  @PostMapping("/dataflows/{dataflowId}/series/{seriesId}/add")
-  public String addValue(
-      @PathVariable Long dataflowId,
-      @PathVariable Long seriesId,
-      @RequestParam String timePeriod,
-      @RequestParam(required = false) String comment,
-      @RequestParam(required = false) String asOf,
-      @RequestParam(defaultValue = "false") boolean panelMode,
-      @RequestParam Map<String, String> allParams,
-      Authentication authentication,
-      Model model) {
-    Map<Long, String> measureValues = measureValues(allParams);
-    String error = null;
-    try {
-      observationService.addObservation(
-          dataflowId, seriesId, timePeriod, measureValues, comment, authentication.getName());
-    } catch (IllegalArgumentException e) {
-      error = e.getMessage();
-    }
-    populateSeriesModel(dataflowId, seriesId, asOf, ObservationStage.ALPHA.name(), model);
-    if (error != null) {
-      // show the form again with what was entered
-      @SuppressWarnings("unchecked")
-      List<Long> measureIds = (List<Long>) model.getAttribute("measureIds");
-      model.addAttribute("addRow", true);
-      model.addAttribute("addPeriod", timePeriod);
-      model.addAttribute(
-          "addValues", measureIds.stream().map(id -> measureValues.getOrDefault(id, "")).toList());
-      model.addAttribute("addComment", comment);
-      model.addAttribute("tableError", error);
-    } else {
-      model.addAttribute("savedPeriod", timePeriod.strip());
-    }
-    model.addAttribute("panelMode", panelMode);
-    return "explore/fragments/series-parts :: valueTable";
-  }
-
-  /** Inline confirmation to delete one period, with a reason (Datenmanager, Alpha view; #25). */
-  @GetMapping("/dataflows/{dataflowId}/series/{seriesId}/delete-value")
-  public String deleteValueForm(
-      @PathVariable Long dataflowId,
-      @PathVariable Long seriesId,
-      @RequestParam String timePeriod,
-      @RequestParam(required = false) String asOf,
-      @RequestParam(defaultValue = "false") boolean panelMode,
-      Model model) {
-    populateSeriesModel(dataflowId, seriesId, asOf, ObservationStage.ALPHA.name(), model);
-    model.addAttribute("deletePeriod", timePeriod);
-    model.addAttribute("panelMode", panelMode);
-    return "explore/fragments/series-parts :: valueTable";
-  }
-
-  @PostMapping("/dataflows/{dataflowId}/series/{seriesId}/delete")
-  public String deleteValue(
-      @PathVariable Long dataflowId,
-      @PathVariable Long seriesId,
-      @RequestParam String timePeriod,
-      @RequestParam(required = false) String reason,
-      @RequestParam(required = false) String asOf,
-      @RequestParam(defaultValue = "false") boolean panelMode,
-      Authentication authentication,
-      Model model) {
-    String message;
-    String error = null;
-    try {
-      boolean published =
-          observationService.deleteObservation(
-              dataflowId, seriesId, timePeriod, reason, authentication.getName());
-      message =
-          timePeriod
-              + " deleted"
-              + (published ? " - still published until the next promotion" : "")
-              + ".";
-    } catch (IllegalArgumentException e) {
-      message = null;
-      error = e.getMessage();
-    }
-    populateSeriesModel(dataflowId, seriesId, asOf, ObservationStage.ALPHA.name(), model);
-    if (error != null) {
-      model.addAttribute("deletePeriod", timePeriod);
-      model.addAttribute("tableError", error);
-    }
-    model.addAttribute("tableMessage", message);
-    model.addAttribute("panelMode", panelMode);
-    return "explore/fragments/series-parts :: valueTable";
-  }
-
-  private static Map<Long, String> measureValues(Map<String, String> params) {
-    Map<Long, String> values = new HashMap<>();
-    params.forEach(
-        (key, value) -> {
-          if (key.startsWith("measure_")) {
-            values.put(Long.valueOf(key.substring(8)), value);
-          }
-        });
-    return values;
-  }
-
-  private void populateSeriesModel(
-      Long dataflowId, Long seriesId, String asOf, String stageParam, Model model) {
-    boolean dm = Roles.isDatenmanager();
-    ObservationStage stage = ExploreDataflowController.parseStage(stageParam, dm);
-    Instant asOfInstant = parseAsOf(asOf);
-    Dataflow dataflow = dataflowService.findById(dataflowId);
-    DataStructureDefinition dsd = dsdService.findById(dataflow.dsdId());
-    Map<Long, ConceptRef> concepts = conceptRefs();
-    Series series = observationService.findSeriesById(seriesId);
-    List<Measure> measures =
-        dsd.measures().stream().sorted(Comparator.comparing(Measure::id)).toList();
-    Long firstMeasureId = measures.isEmpty() ? null : measures.get(0).id();
-
-    List<Observation> observations = seriesObservations(dataflowId, seriesId, null, stage);
-    Map<String, Map<Long, String>> asOfValues = new HashMap<>();
-    if (asOfInstant != null) {
-      seriesObservations(dataflowId, seriesId, asOfInstant, stage)
-          .forEach(
-              o ->
-                  asOfValues.put(
-                      o.timePeriod(),
-                      observationService.parseMeasureValues(o.measureValuesJson())));
-    }
-    Map<String, List<Revision>> revisionsByPeriod = revisions(seriesId, stage, measures, concepts);
-    // Alpha view: which values differ from what is published (= pending changes)
-    Map<String, String> publishedJson = new HashMap<>();
-    if (stage == ObservationStage.ALPHA) {
-      seriesObservations(dataflowId, seriesId, null, ObservationStage.BETA)
-          .forEach(o -> publishedJson.put(o.timePeriod(), o.measureValuesJson()));
-    }
-
-    List<String> chartLabels = observations.stream().map(Observation::timePeriod).toList();
-    List<Double> chartValues =
-        observations.stream()
-            .map(
-                o -> {
-                  String value =
-                      observationService
-                          .parseMeasureValues(o.measureValuesJson())
-                          .get(firstMeasureId);
-                  return value == null ? null : Double.valueOf(value);
-                })
-            .toList();
-    List<Double> chartAsOfValues =
-        asOfInstant == null
-            ? null
-            : observations.stream()
-                .map(
-                    o -> {
-                      Map<Long, String> v = asOfValues.get(o.timePeriod());
-                      String value = v == null ? null : v.get(firstMeasureId);
-                      return value == null ? null : Double.valueOf(value);
-                    })
-                .toList();
-    List<ObsRow> tableRows =
-        observations.stream()
-            .map(
-                o -> {
-                  Map<Long, String> values =
-                      observationService.parseMeasureValues(o.measureValuesJson());
-                  Map<Long, String> then = asOfValues.get(o.timePeriod());
-                  return new ObsRow(
-                      o.timePeriod(),
-                      measures.stream().map(m -> values.getOrDefault(m.id(), "")).toList(),
-                      asOfInstant == null
-                          ? null
-                          : measures.stream()
-                              .map(m -> then == null ? "" : then.getOrDefault(m.id(), ""))
-                              .toList(),
-                      revisionsByPeriod.getOrDefault(o.timePeriod(), List.of()),
-                      stage == ObservationStage.ALPHA
-                          ? pendingLabel(publishedJson.get(o.timePeriod()), o, measures)
-                          : null);
-                })
-            .toList();
-    if (stage == ObservationStage.ALPHA) {
-      // deleted in Alpha but still published (#25): shown with the published value until promotion
-      java.util.Set<String> alphaPeriods =
-          observations.stream().map(Observation::timePeriod).collect(Collectors.toSet());
-      List<ObsRow> rows = new ArrayList<>(tableRows);
-      publishedJson.forEach(
-          (period, json) -> {
-            if (!alphaPeriods.contains(period)) {
-              Map<Long, String> values = observationService.parseMeasureValues(json);
-              rows.add(
-                  new ObsRow(
-                      period,
-                      measures.stream().map(m -> values.getOrDefault(m.id(), "")).toList(),
-                      asOfInstant == null ? null : measures.stream().map(m -> "").toList(),
-                      revisionsByPeriod.getOrDefault(period, List.of()),
-                      DELETED));
-            }
-          });
-      rows.sort(Comparator.comparing(ObsRow::timePeriod));
-      tableRows = rows;
-    }
-    List<MeasureColumn> measureColumns =
-        measures.stream()
-            .map(
-                m -> {
-                  ConceptRef concept = concepts.get(m.conceptId());
-                  String header =
-                      measures.size() == 1 ? "Value" : concept == null ? "#" : concept.code();
-                  return new MeasureColumn(header, concept == null ? "" : concept.label());
-                })
-            .toList();
-
-    model.addAttribute("dataflow", dataflow);
-    model.addAttribute("dsd", dsd);
-    model.addAttribute("seriesId", seriesId);
-    model.addAttribute("seriesKey", series.seriesKey());
-    model.addAttribute("keyDimensions", keyDimensionInfos(dsd, series.seriesKey(), concepts));
-    model.addAttribute("measureColumns", measureColumns);
-    model.addAttribute("chartLabels", chartLabels);
-    model.addAttribute("chartValues", chartValues);
-    model.addAttribute("chartAsOfValues", chartAsOfValues);
-    model.addAttribute("tableRows", tableRows);
-    model.addAttribute("asOf", asOf == null || asOf.isBlank() ? null : asOf.trim());
-    model.addAttribute("asOfInstant", asOfInstant == null ? null : asOfInstant.toString());
-    model.addAttribute(
-        "revisedCount", revisionsByPeriod.values().stream().filter(r -> r.size() > 1).count());
-    model.addAttribute("stage", stage.name());
-    model.addAttribute("isDatenmanager", dm);
-    model.addAttribute("canEdit", dm && stage == ObservationStage.ALPHA);
-    model.addAttribute("addRow", false);
-    model.addAttribute("measureIds", measures.stream().map(Measure::id).toList());
-    model.addAttribute("pendingCount", tableRows.stream().filter(r -> r.pending() != null).count());
-  }
-
-  /** Same comparison as the promotion: the stored JSON text. */
-  private String pendingLabel(String publishedJson, Observation alpha, List<Measure> measures) {
-    if (publishedJson == null) {
-      return "new";
-    }
-    if (publishedJson.equals(alpha.measureValuesJson())) {
-      return null;
-    }
-    Map<Long, String> published = observationService.parseMeasureValues(publishedJson);
-    return measures.stream()
-        .map(m -> published.getOrDefault(m.id(), ""))
-        .collect(Collectors.joining(" / "));
-  }
-
-  /**
-   * Published (Beta) value history per time period. Consecutive vintages with identical values are
-   * merged - they come from unchanged re-deliveries, not from revisions.
-   */
-  private Map<String, List<Revision>> revisions(
-      Long seriesId,
-      ObservationStage stage,
-      List<Measure> measures,
-      Map<Long, ConceptRef> concepts) {
-    Map<String, List<Revision>> result = new LinkedHashMap<>();
-    Map<String, Map<Long, String>> lastValues = new HashMap<>();
-    for (Observation o : observationService.findSeriesHistory(seriesId, stage)) {
-      Map<Long, String> values = observationService.parseMeasureValues(o.measureValuesJson());
-      List<Revision> list = result.computeIfAbsent(o.timePeriod(), k -> new ArrayList<>());
-      String validTo = o.validTo() == null ? null : o.validTo().toString();
-      if (values.equals(lastValues.get(o.timePeriod())) && !list.isEmpty()) {
-        Revision previous = list.remove(list.size() - 1);
-        list.add(new Revision(previous.values(), previous.validFrom(), validTo, o.comment()));
-      } else {
-        String label =
-            measures.size() == 1
-                ? values.getOrDefault(measures.get(0).id(), "")
-                : measures.stream()
-                    .map(
-                        m ->
-                            (concepts.containsKey(m.conceptId())
-                                    ? concepts.get(m.conceptId()).code()
-                                    : "#")
-                                + "="
-                                + values.getOrDefault(m.id(), ""))
-                    .collect(Collectors.joining(", "));
-        list.add(new Revision(label, o.validFrom().toString(), validTo, o.comment()));
-      }
-      lastValues.put(o.timePeriod(), values);
-    }
-    return result;
-  }
-
-  private List<DimensionInfo> keyDimensionInfos(
-      DataStructureDefinition dsd, String seriesKey, Map<Long, ConceptRef> concepts) {
-    String[] values = seriesKey.split("\\.", -1);
-    List<Dimension> keyDimensions =
-        dsd.dimensions().stream()
-            .filter(d -> d.dataType() != DataType.DATE)
-            .sorted(Comparator.comparingInt(Dimension::position))
-            .toList();
-    List<DimensionInfo> infos = new ArrayList<>();
-    for (int i = 0; i < keyDimensions.size(); i++) {
-      Dimension dimension = keyDimensions.get(i);
-      String value = i < values.length ? values[i] : "";
-      ConceptRef concept = concepts.get(dimension.conceptId());
-      Codelist codelist =
-          dimension.codelistId() == null ? null : codelistService.findById(dimension.codelistId());
-      String valueName =
-          codelist == null
-              ? null
-              : codelist.codes().stream()
-                  .filter(c -> c.code().equals(value))
-                  .map(Code::name)
-                  .findFirst()
-                  .orElse(null);
-      infos.add(
-          new DimensionInfo(
-              concept == null ? "#" + dimension.conceptId() : concept.code(),
-              concept == null ? "" : concept.name(),
-              concept == null ? null : concept.schemeId(),
-              value,
-              valueName,
-              codelist == null ? null : codelist.id(),
-              codelist == null ? null : codelist.artefactId()));
-    }
-    return infos;
-  }
-
-  private Map<Long, ConceptRef> conceptRefs() {
-    Map<Long, ConceptRef> refs = new HashMap<>();
-    for (ConceptScheme scheme : conceptSchemeService.findAll()) {
-      scheme
-          .concepts()
-          .forEach(
-              c ->
-                  refs.put(
-                      c.id(),
-                      new ConceptRef(c.code(), c.name(), scheme.id(), scheme.artefactId())));
-    }
-    return refs;
-  }
-
-  private Map<Long, String> conceptLabels() {
-    return ConceptLabels.byConceptId(conceptSchemeService);
   }
 
   @GetMapping("/dataflows/{dataflowId}/series/{seriesId}/export.csv")
@@ -708,7 +266,7 @@ public class ExploreController {
       throws IOException {
     Dataflow dataflow = dataflowService.findById(dataflowId);
     DataStructureDefinition dsd = dsdService.findById(dataflow.dsdId());
-    Map<Long, ConceptRef> concepts = conceptRefs();
+    Map<Long, SeriesStructure.ConceptRef> concepts = structure.conceptRefs();
     Series series = observationService.findSeriesById(seriesId);
     List<Measure> measures =
         dsd.measures().stream().sorted(Comparator.comparing(Measure::id)).toList();
@@ -717,13 +275,14 @@ public class ExploreController {
             .filter(d -> d.dataType() == DataType.DATE)
             .map(d -> concepts.get(d.conceptId()))
             .filter(java.util.Objects::nonNull)
-            .map(ConceptRef::code)
+            .map(SeriesStructure.ConceptRef::code)
             .findFirst()
             .orElse("TIME_PERIOD");
 
     List<String> dimensionIds = new ArrayList<>();
     List<String> keyValues = new ArrayList<>();
-    keyDimensionInfos(dsd, series.seriesKey(), concepts)
+    structure
+        .keyDimensionInfos(dsd, series.seriesKey(), concepts)
         .forEach(
             d -> {
               dimensionIds.add(d.conceptCode());
@@ -833,43 +392,4 @@ public class ExploreController {
    * @param pending Alpha view only: null = same as published, otherwise "new" or the published
    *     values the row would replace on promotion
    */
-  /** {@link ObsRow#pending} of a period deleted in Alpha but still published (#25). */
-  static final String DELETED = "deleted";
-
-  /**
-   * @param pending Alpha view: null = as published, "new", "deleted" or the published values
-   */
-  public record ObsRow(
-      String timePeriod,
-      List<String> values,
-      List<String> asOfValues,
-      List<Revision> revisions,
-      String pending) {
-    public boolean deleted() {
-      return DELETED.equals(pending);
-    }
-
-    public boolean revised() {
-      return revisions.size() > 1;
-    }
-  }
-
-  public record Revision(String values, String validFrom, String validTo, String comment) {}
-
-  public record MeasureColumn(String header, String tooltip) {}
-
-  public record DimensionInfo(
-      String conceptCode,
-      String conceptName,
-      Long conceptSchemeId,
-      String value,
-      String valueName,
-      Long codelistId,
-      String codelistArtefactId) {}
-
-  private record ConceptRef(String code, String name, Long schemeId, String schemeArtefactId) {
-    String label() {
-      return schemeArtefactId + ":" + code + " - " + name;
-    }
-  }
 }

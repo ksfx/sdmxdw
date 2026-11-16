@@ -5,7 +5,9 @@
     <title th:text="${dataflow.artefactId}">Dataflow</title>
     <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.23/dist/full.min.css" rel="stylesheet" type="text/css" />
     <link rel="stylesheet" href="/css/brand.css" />
-    <link rel="icon" href="/img/favicon.png" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/img/favicon-192.png" />
+    <link rel="apple-touch-icon" href="/img/apple-touch-icon.png" />
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/htmx.org@2.0.3"></script>
     <script src="/js/dimension-filter.js"></script>
@@ -13,6 +15,7 @@
 <body class="min-h-screen bg-base-200">
 <div th:replace="~{fragments/nav :: nav}"></div>
 <div class="p-8 space-y-6" th:with="alpha=${stage == 'ALPHA'}">
+    <nav th:replace="~{fragments/breadcrumb :: crumbs(${crumbs}, ${alpha})}"></nav>
 
     <!-- header: dataflow, stage switch and promotion (Datenmanager) -->
     <div class="card bg-base-100 shadow-xl p-6">
@@ -47,13 +50,14 @@
     <!-- tabs -->
     <div role="tablist" class="tabs tabs-boxed bg-base-100 shadow w-fit">
         <a role="tab" class="tab" th:classappend="${view == 'series'} ? 'tab-active'" th:href="${tabUrls['series']}">Series</a>
+        <a role="tab" class="tab" th:classappend="${view == 'table'} ? 'tab-active'" th:href="${tabUrls['table']}">Table</a>
         <a th:if="${isDatenmanager}" role="tab" class="tab gap-2" th:classappend="${view == 'pending'} ? 'tab-active'" th:href="${tabUrls['pending']}">
             Pending changes <span class="badge badge-sm" th:classappend="${pendingCount > 0} ? 'badge-warning'" th:text="${pendingCount}"></span></a>
         <a th:if="${isDatenmanager}" role="tab" class="tab" th:classappend="${view == 'activity'} ? 'tab-active'" th:href="${tabUrls['activity']}">Activity</a>
     </div>
 
     <!-- filters (all views except activity) -->
-    <div class="card bg-base-100 shadow-xl p-6" th:if="${view != 'activity'}">
+    <div class="card bg-base-100 shadow-xl p-6" th:if="${view != 'activity' and view != 'table'}">
         <form method="get" th:action="@{/explore/dataflows/{id}(id=${dataflow.id})}" class="space-y-3">
             <input type="hidden" name="view" th:value="${view}"/>
             <input type="hidden" name="stage" th:value="${stage}"/>
@@ -128,6 +132,122 @@
         <p th:if="${#lists.isEmpty(rows)}" class="opacity-60 mt-2">No series match the filter.</p>
         <div th:replace="~{explore/fragments/pager :: pager(${result.page}, ${result.totalPages})}"></div>
     </div>
+
+    <!-- table view (#15): one slice of the cube, layout from annotations, URL or heuristic -->
+    <th:block th:if="${view == 'table'}" th:with="t=${table}">
+    <div class="card bg-base-100 shadow-xl p-6 space-y-4">
+        <form method="get" th:action="@{/explore/dataflows/{id}(id=${dataflow.id})}" class="space-y-3" id="table-form">
+            <input type="hidden" name="view" value="table"/>
+            <input type="hidden" name="stage" th:value="${stage}"/>
+            <div class="flex flex-wrap gap-3 items-end">
+                <th:block th:each="d : ${t.dimensions}">
+                    <div th:if="${d.role.name() == 'FILTER' and !d.hidden}" class="form-control">
+                        <label class="label text-xs font-semibold py-1" th:text="${d.label}" th:title="${d.id}"></label>
+                        <select class="select select-bordered select-sm max-w-xs" th:name="${d.time} ? 'time' : 'k_' + ${d.id}" onchange="this.form.submit()">
+                            <option th:if="${#lists.isEmpty(d.options)}" value="">(no data)</option>
+                            <option th:each="o : ${d.options}" th:value="${o.code}" th:selected="${o.code == d.selected}"
+                                    th:text="${d.time} ? ${o.label} : ${o.label} + ' (' + ${o.count} + ')'"></option>
+                        </select>
+                    </div>
+                    <input th:if="${d.role.name() == 'FILTER' and d.hidden and d.selected != null}" type="hidden"
+                           th:name="${d.time} ? 'time' : 'k_' + ${d.id}" th:value="${d.selected}"/>
+                </th:block>
+                <div th:if="${#lists.size(t.measures) > 1}" class="form-control">
+                    <label class="label text-xs font-semibold py-1">Measure</label>
+                    <select class="select select-bordered select-sm" name="measure" onchange="this.form.submit()">
+                        <option th:each="m : ${t.measures}" th:value="${m.code}" th:selected="${m.code == t.measure}" th:text="${m.code} + ' - ' + ${m.label}"></option>
+                    </select>
+                </div>
+            </div>
+            <details class="text-sm" th:open="${t.layout.source.name() == 'URL'}">
+                <summary class="cursor-pointer font-semibold">Layout
+                    <span class="font-normal opacity-60" th:switch="${t.layout.source.name()}">
+                        <span th:case="'ANNOTATIONS'">- from the dataflow's annotations</span>
+                        <span th:case="'URL'">- arranged by you</span>
+                        <span th:case="*">- chosen automatically (no layout annotations)</span>
+                    </span></summary>
+                <div class="flex flex-wrap gap-3 items-end mt-2">
+                    <div th:each="d : ${t.dimensions}" class="form-control">
+                        <label class="label text-xs py-1" th:text="${d.label}" th:title="${d.id}"></label>
+                        <select class="select select-bordered select-xs" th:name="'role_' + ${d.id}" onchange="this.form.submit()">
+                            <option value="ROW" th:selected="${d.role.name() == 'ROW'}">Rows</option>
+                            <option value="COLUMN" th:selected="${d.role.name() == 'COLUMN'}">Columns</option>
+                            <option value="SECTION" th:selected="${d.role.name() == 'SECTION'}">Row sections</option>
+                            <option value="FILTER" th:selected="${d.role.name() == 'FILTER'}">Filter</option>
+                        </select>
+                    </div>
+                    <a class="btn btn-xs" title="Swap rows and columns"
+                       th:href="@{/explore/dataflows/{id}(id=${dataflow.id},view='table',stage=${stage},sections=${#strings.listJoin(t.layout.sections, ',')},rows=${#strings.listJoin(t.layout.columns, ',')},cols=${#strings.listJoin(t.layout.rows, ',')})}">Swap rows and columns</a>
+                    <a class="btn btn-xs btn-ghost" th:href="@{/explore/dataflows/{id}(id=${dataflow.id},view='table',stage=${stage})}">Default layout</a>
+                </div>
+            </details>
+            <input th:if="${t.layout.source.name() == 'URL'}" type="hidden" name="sections" th:value="${#strings.listJoin(t.layout.sections, ',')}"/>
+            <input th:if="${t.layout.source.name() == 'URL'}" type="hidden" name="rows" th:value="${#strings.listJoin(t.layout.rows, ',')}"/>
+            <input th:if="${t.layout.source.name() == 'URL'}" type="hidden" name="cols" th:value="${#strings.listJoin(t.layout.columns, ',')}"/>
+        </form>
+        <script>
+            // a role select replaces the URL layout: drop the hidden sections/rows/cols
+            document.querySelectorAll('#table-form select[name^="role_"]').forEach(s => s.addEventListener('change', () =>
+                document.querySelectorAll('#table-form input[name=sections], #table-form input[name=rows], #table-form input[name=cols]').forEach(i => i.remove()), true));
+        </script>
+
+        <div class="flex flex-wrap justify-between items-center gap-2">
+            <p class="text-sm opacity-70">
+                <span th:text="${#numbers.formatInteger(t.observations, 1, 'COMMA')} + ' value(s)'"></span>
+                <span th:if="${t.truncated}" class="text-warning" th:text="' - only the first ' + ${t.maxCells()} + ' values; select more filters'"></span>
+                <span th:if="${t.periodsCut}" class="text-warning" th:text="' - the latest ' + ${t.maxPeriods()} + ' periods'"></span>
+            </p>
+            <div class="flex gap-2" th:unless="${t.empty}">
+                <a class="btn btn-xs" th:href="@{/explore/dataflows/{id}/table.csv(id=${dataflow.id},stage=${stage})} + '&' + ${t.query()}">
+                    <span th:replace="~{fragments/icons :: icon('download')}"></span> CSV</a>
+                <a class="btn btn-xs" th:href="@{/explore/dataflows/{id}/table.xlsx(id=${dataflow.id},stage=${stage})} + '&' + ${t.query()}">
+                    <span th:replace="~{fragments/icons :: icon('download')}"></span> Excel</a>
+            </div>
+        </div>
+        <p th:if="${t.empty}" class="opacity-60">No data for this selection.</p>
+
+        <div th:unless="${t.empty}" class="overflow-auto max-h-[75vh] border border-base-300 rounded-box">
+            <table class="table table-xs table-pin-rows table-pin-cols">
+                <thead>
+                <!-- no column dimension: one value column -->
+                <tr th:if="${#lists.isEmpty(t.columnHeaders)}">
+                    <th th:each="rh : ${t.rowHeaders}" th:text="${rh}"></th>
+                    <td class="text-right font-semibold border-l border-base-300" th:text="${t.measure} ?: 'Value'"></td>
+                </tr>
+                <tr th:each="level, lv : ${t.columnHeaders}">
+                    <th th:if="${!lv.last}" th:colspan="${#lists.size(t.rowHeaders) > 0} ? ${#lists.size(t.rowHeaders)} : 1"
+                        class="text-right opacity-60" th:text="${t.layout.columns[lv.index]}"></th>
+                    <th:block th:if="${lv.last}">
+                        <th th:each="rh : ${t.rowHeaders}" th:text="${rh}"></th>
+                        <th th:if="${#lists.isEmpty(t.rowHeaders)}"></th>
+                    </th:block>
+                    <td th:each="h : ${level}" th:colspan="${h.colspan}" class="text-center align-bottom font-semibold border-l border-base-300"
+                        th:title="${h.name} != null ? ${h.code} + ' - ' + ${h.name} : ${h.code}">
+                        <span class="font-mono" th:text="${h.code}"></span>
+                        <div th:if="${h.name}" class="font-normal text-[0.7rem] opacity-70 max-w-[10rem] line-clamp-2 mx-auto" th:text="${h.name}"></div>
+                    </td>
+                </tr>
+                </thead>
+                <tbody>
+                <th:block th:each="s : ${t.sections}">
+                    <tr th:if="${s.label}" class="bg-base-200"><th th:colspan="${#lists.size(t.rowHeaders) + t.columnCount}" class="text-sm" th:text="${s.label}"></th></tr>
+                    <tr th:each="r : ${s.rows}" class="hover">
+                        <th th:each="c, ci : ${r.codes}" class="font-normal align-top min-w-[8rem] max-w-[22rem]"
+                            th:title="${r.names[ci.index]} != null ? ${c} + ' - ' + ${r.names[ci.index]} : ${c}">
+                            <span class="font-mono text-xs opacity-60 mr-1" th:text="${c}"></span><span th:text="${r.names[ci.index]}"></span>
+                        </th>
+                        <td th:each="cell : ${r.cells}" class="text-right tabular-nums whitespace-nowrap border-l border-base-200">
+                            <a th:if="${cell.seriesId}" class="link link-hover"
+                               th:href="@{/explore/dataflows/{id}/series/{sid}(id=${dataflow.id},sid=${cell.seriesId},stage=${stage == 'ALPHA' ? 'ALPHA' : null},ret=${t.href(stage)})}"
+                               title="Open the series" th:text="${cell.value}"></a>
+                        </td>
+                    </tr>
+                </th:block>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    </th:block>
 
     <!-- pending changes: Alpha vs Beta -->
     <div class="card bg-base-100 shadow-xl p-6" th:if="${view == 'pending'}">

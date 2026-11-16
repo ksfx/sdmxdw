@@ -67,13 +67,16 @@ public class ExploreMicrodataFlowController {
   private final CodelistService codelistService;
   private final AuditLogService auditLogService;
   private final MarkdownRenderer markdown;
+  private final Breadcrumbs breadcrumbs;
 
   public ExploreMicrodataFlowController(
       MicrodataFlowService flowService,
       MicrodataRecordService recordService,
       CodelistService codelistService,
       AuditLogService auditLogService,
-      MarkdownRenderer markdown) {
+      MarkdownRenderer markdown,
+      Breadcrumbs breadcrumbs) {
+    this.breadcrumbs = breadcrumbs;
     this.flowService = flowService;
     this.recordService = recordService;
     this.codelistService = codelistService;
@@ -125,6 +128,7 @@ public class ExploreMicrodataFlowController {
         });
 
     model.addAttribute("flow", flow);
+    model.addAttribute("crumbs", crumbs(flow, null));
     model.addAttribute(
         "descriptionSummaryHtml",
         markdown.render(MarkdownRenderer.firstParagraph(flow.description())));
@@ -404,7 +408,15 @@ public class ExploreMicrodataFlowController {
                 record.stage() == MicrodataStage.BETA ? MicrodataStage.ALPHA : MicrodataStage.BETA)
             : Optional.empty();
 
-    model.addAttribute("flow", flowService.findById(flowId));
+    MicrodataFlow flow = flowService.findById(flowId);
+    model.addAttribute("flow", flow);
+    model.addAttribute(
+        "crumbs",
+        crumbs(
+            flow,
+            record.stage() == MicrodataStage.ALPHA,
+            new Breadcrumbs.Crumb(
+                record.entityId() + " @ " + record.reportingPeriod(), null, null)));
     model.addAttribute("record", record);
     model.addAttribute("rows", rows);
     model.addAttribute("groups", groupSections(fields, payload, published));
@@ -552,6 +564,24 @@ public class ExploreMicrodataFlowController {
 
   // --- helpers ---------------------------------------------------------------------------------
 
+  /**
+   * Explore microdata > scheme > categories > flow, then {@code tail}; with a tail the flow is a
+   * link (to its Alpha view for unpublished records).
+   */
+  private List<Breadcrumbs.Crumb> crumbs(
+      MicrodataFlow flow, Boolean alpha, Breadcrumbs.Crumb... tail) {
+    List<Breadcrumbs.Crumb> crumbs = new ArrayList<>(breadcrumbs.forMicrodataFlow(flow.id()));
+    String href =
+        tail.length == 0
+            ? null
+            : "/explore/microdata/"
+                + flow.id()
+                + (Boolean.TRUE.equals(alpha) ? "?stage=ALPHA" : "");
+    crumbs.add(new Breadcrumbs.Crumb(flow.artefactId(), flow.name(), href));
+    crumbs.addAll(List.of(tail));
+    return crumbs;
+  }
+
   private MicrodataRecord loadRecord(Long flowId, Long recordId) {
     MicrodataRecord record = recordService.findById(flowId, recordId);
     if (!record.microdataFlowId().equals(flowId)) {
@@ -592,7 +622,20 @@ public class ExploreMicrodataFlowController {
           items.add(Map.of());
           editGroups.add(new EditGroup(code, gf, items));
         });
-    model.addAttribute("flow", flowService.findById(flowId));
+    MicrodataFlow flow = flowService.findById(flowId);
+    model.addAttribute("flow", flow);
+    model.addAttribute(
+        "crumbs",
+        record == null
+            ? crumbs(flow, true, new Breadcrumbs.Crumb("New record", null, null))
+            : crumbs(
+                flow,
+                true,
+                new Breadcrumbs.Crumb(
+                    record.entityId() + " @ " + record.reportingPeriod(),
+                    null,
+                    "/explore/microdata/" + flowId + "/records/" + record.id()),
+                new Breadcrumbs.Crumb("Edit", null, null)));
     model.addAttribute("record", record);
     model.addAttribute("fields", scalarFields);
     model.addAttribute("groups", editGroups);

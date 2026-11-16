@@ -64,7 +64,14 @@ public class SecurityConfig {
     http.authorizeHttpRequests(
             authorize ->
                 authorize
-                    .requestMatchers("/login", "/css/**", "/js/**", "/img/**", "/actuator/health")
+                    .requestMatchers(
+                        "/login",
+                        "/favicon.ico",
+                        "/css/**",
+                        "/js/**",
+                        "/img/**",
+                        "/licenses/**",
+                        "/actuator/health")
                     .permitAll()
                     .requestMatchers("/users/**", "/processes/**")
                     .hasRole("DATENMANAGER")

@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org" data-theme="sdmxdw">
+<head>
+    <meta charset="UTF-8"/>
+    <title th:text="${scheme.name}">Category scheme</title>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.23/dist/full.min.css" rel="stylesheet" type="text/css" />
+    <link rel="stylesheet" href="/css/brand.css" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/img/favicon-192.png" />
+    <link rel="apple-touch-icon" href="/img/apple-touch-icon.png" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script th:if="${tab == 'relations'}" src="https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
+</head>
+<body class="min-h-screen bg-base-200">
+<div th:replace="~{fragments/nav :: nav}"></div>
+<div class="p-8 space-y-6">
+    <nav th:replace="~{fragments/breadcrumb :: crumbs(${crumbs}, false)}"></nav>
+    <div class="card bg-base-100 shadow-xl p-6">
+        <h1 class="text-xl font-bold" th:text="${scheme.name}"></h1>
+        <p class="text-sm opacity-70 font-mono" th:text="${scheme.agencyId} + ':' + ${scheme.artefactId} + '(' + ${scheme.version} + ')'"></p>
+        <p class="text-sm opacity-70 mt-1" th:text="${flowCount} + ' microdata flow(s)'"></p>
+    </div>
+
+    <div role="tablist" class="tabs tabs-boxed bg-base-100 shadow w-fit">
+        <a role="tab" class="tab" th:classappend="${tab == 'flows'} ? 'tab-active'" th:href="@{/explore/microdata/category-schemes/{id}(id=${scheme.id})}">Flows</a>
+        <a role="tab" class="tab" th:classappend="${tab == 'relations'} ? 'tab-active'" th:href="@{/explore/microdata/category-schemes/{id}(id=${scheme.id},tab='relations')}">Relations</a>
+        <a role="tab" class="tab" th:classappend="${tab == 'about'} ? 'tab-active'" th:href="@{/explore/microdata/category-schemes/{id}(id=${scheme.id},tab='about')}">About</a>
+    </div>
+
+    <!-- flows by category -->
+    <div th:if="${tab == 'flows'}" class="card bg-base-100 shadow-xl p-6">
+        <div th:replace="~{::categories(${roots})}"></div>
+        <p th:if="${#lists.isEmpty(roots)}" class="opacity-60">No microdata flows in this scheme.</p>
+    </div>
+
+    <!-- relations, embedded -->
+    <div th:if="${tab == 'relations'}" class="card bg-base-100 shadow-xl overflow-hidden">
+        <div th:replace="~{explore/fragments/relations :: view(true)}"></div>
+    </div>
+
+    <!-- about -->
+    <div th:if="${tab == 'about'}" class="card bg-base-100 shadow-xl p-6">
+        <div th:if="${descriptionHtml != ''}" class="markdown-body max-w-4xl" th:utext="${descriptionHtml}"></div>
+        <p th:if="${descriptionHtml == ''}" class="opacity-60">No description yet. Datenmanager add one on the category scheme page (Structures).</p>
+    </div>
+
+    <div th:fragment="categories(nodes)" class="space-y-4">
+        <section th:each="node : ${nodes}" th:id="'cat-' + ${node.id}" class="scroll-mt-24">
+            <h2 class="font-bold"><span class="font-mono text-sm opacity-60 mr-2" th:text="${node.code}"></span><span th:text="${node.name}"></span></h2>
+            <ul class="mt-1 space-y-1" th:unless="${#lists.isEmpty(flowsByCategory.get(node.id))}">
+                <li th:each="flow : ${flowsByCategory.get(node.id)}">
+                    <a class="link link-primary font-mono text-sm" th:href="@{/explore/microdata/{id}(id=${flow.id})}" th:text="${flow.artefactId}"></a>
+                    <span class="opacity-70" th:text="' - ' + ${flow.name}"></span>
+                </li>
+            </ul>
+            <div th:unless="${#lists.isEmpty(node.children)}" class="pl-6 mt-3" th:insert="~{::categories(${node.children})}"></div>
+        </section>
+    </div>
+</div>
+<script th:if="${tab == 'relations'}" src="/js/relations.js"></script>
+<script th:if="${tab == 'relations'}" th:inline="javascript">
+    openRelations(/*[[${scheme.id}]]*/ 0);
+</script>
+<script th:if="${tab == 'flows'}">
+    if (location.hash.startsWith('#cat-')) {
+        const el = document.getElementById(location.hash.slice(1));
+        if (el) el.classList.add('bg-warning/10', 'rounded-box', 'p-2');
+    }
+</script>
+</body>
+</html>

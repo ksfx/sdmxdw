@@ -46,12 +46,15 @@ public class ExploreMicrodataController {
   private final MicrodataRecordService microdataRecordService;
   private final MicrodataCategorisationService microdataCategorisationService;
   private final CategorySchemeService categorySchemeService;
+  private final MarkdownRenderer markdown;
 
   public ExploreMicrodataController(
       MicrodataFlowService microdataFlowService,
       MicrodataRecordService microdataRecordService,
       MicrodataCategorisationService microdataCategorisationService,
-      CategorySchemeService categorySchemeService) {
+      CategorySchemeService categorySchemeService,
+      MarkdownRenderer markdown) {
+    this.markdown = markdown;
     this.microdataFlowService = microdataFlowService;
     this.microdataRecordService = microdataRecordService;
     this.microdataCategorisationService = microdataCategorisationService;
@@ -83,6 +86,37 @@ public class ExploreMicrodataController {
         microdataRecordService.findDistinctReportingPeriods(MicrodataStage.BETA));
     model.addAttribute("reportingPeriod", reportingPeriod);
     return "explore/microdata-index";
+  }
+
+  /**
+   * One microdata category scheme: its categories with their flows, the relations view and the
+   * description (tabs flows, relations, about).
+   */
+  @GetMapping("/category-schemes/{schemeId}")
+  public String scheme(
+      @PathVariable Long schemeId, @RequestParam(defaultValue = "flows") String tab, Model model) {
+    CategoryScheme scheme = categorySchemeService.findById(schemeId);
+    Map<Long, List<MicrodataFlow>> flows = new java.util.HashMap<>();
+    for (Category c : scheme.categories()) {
+      flows.put(
+          c.id(),
+          microdataCategorisationService.findByCategoryId(c.id()).stream()
+              .map(x -> microdataFlowService.findById(x.microdataFlowId()))
+              .sorted(Comparator.comparing(MicrodataFlow::artefactId))
+              .toList());
+    }
+    model.addAttribute("scheme", scheme);
+    model.addAttribute("roots", buildTree(scheme));
+    model.addAttribute("flowsByCategory", flows);
+    model.addAttribute("flowCount", flows.values().stream().mapToInt(List::size).sum());
+    model.addAttribute("descriptionHtml", markdown.render(scheme.description()));
+    model.addAttribute("tab", List.of("flows", "relations", "about").contains(tab) ? tab : "flows");
+    model.addAttribute(
+        "crumbs",
+        List.of(
+            new Breadcrumbs.Crumb("Explore microdata", null, "/explore/microdata"),
+            new Breadcrumbs.Crumb(scheme.name(), scheme.artefactId(), null)));
+    return "explore/microdata-scheme";
   }
 
   @GetMapping("/categories/{categoryId}/flows-fragment")

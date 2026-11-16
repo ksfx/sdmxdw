@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<!--
+  SDMX annotations of one structure artefact (#15): list for everyone, add / edit / remove for
+  Datenmanager. Parameters: target (AnnotationTarget name), targetId, items (List<Annotation>),
+  back (page to return to, e.g. '/structures/dataflows/5').
+-->
+<html xmlns:th="http://www.thymeleaf.org" xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
+<body>
+<div th:fragment="annotations(target, targetId, items, back)" class="space-y-2">
+    <p th:if="${#lists.isEmpty(items)}" class="text-sm opacity-60">No annotations.</p>
+    <table th:unless="${#lists.isEmpty(items)}" class="table table-sm">
+        <thead><tr><th>Type</th><th>Title</th><th>Text</th><th>URL</th><th>Id</th><th></th></tr></thead>
+        <tbody>
+        <th:block th:each="a : ${items}">
+            <tr>
+                <td class="font-mono text-sm" th:text="${a.annotationType} ?: ''"></td>
+                <td class="font-mono text-sm break-all" th:text="${a.title} ?: ''"></td>
+                <td class="text-sm whitespace-pre-line" th:text="${a.text} ?: ''"></td>
+                <td class="text-sm break-all"><a th:if="${a.url}" class="link" th:href="${a.url}" th:text="${a.url}" target="_blank" rel="noopener"></a></td>
+                <td class="font-mono text-xs opacity-70" th:text="${a.annotationId} ?: ''"></td>
+                <td class="whitespace-nowrap text-right" sec:authorize="hasRole('DATENMANAGER')">
+                    <button type="button" class="btn btn-ghost btn-xs btn-square text-primary" title="Edit annotation" aria-label="Edit annotation"
+                            th:attr="onclick='document.getElementById(\'annotation-edit-' + ${a.id} + '\').classList.toggle(\'hidden\')'">
+                        <span th:replace="~{fragments/icons :: icon('pencil')}"></span></button>
+                    <form method="post" class="inline" th:action="@{/structures/annotations/{id}/delete(id=${a.id})}"
+                          onsubmit="return confirm('Remove this annotation?')">
+                        <input type="hidden" name="back" th:value="${back}"/>
+                        <button class="btn btn-ghost btn-xs btn-square text-error" type="submit" title="Remove annotation" aria-label="Remove annotation">
+                            <span th:replace="~{fragments/icons :: icon('trash-2')}"></span></button>
+                    </form>
+                </td>
+            </tr>
+            <tr th:id="'annotation-edit-' + ${a.id}" class="hidden" sec:authorize="hasRole('DATENMANAGER')">
+                <td colspan="6">
+                    <form th:replace="~{structure/fragments/annotations :: fields(${a}, 'Save', @{/structures/annotations/{id}(id=${a.id})})}"></form>
+                </td>
+            </tr>
+        </th:block>
+        </tbody>
+    </table>
+    <details sec:authorize="hasRole('DATENMANAGER')">
+        <summary class="cursor-pointer text-sm"><span th:replace="~{fragments/icons :: icon('plus')}"></span> Add annotation</summary>
+        <form th:replace="~{structure/fragments/annotations :: fields(null, 'Add', @{/structures/annotations})}"></form>
+    </details>
+</div>
+
+<!-- the form fields; ${target}, ${targetId} and ${back} come from the enclosing fragment -->
+<form th:fragment="fields(a, label, action)" method="post" th:action="${action}" class="grid md:grid-cols-2 gap-2 mt-2">
+    <input type="hidden" name="target" th:value="${target}"/>
+    <input type="hidden" name="targetId" th:value="${targetId}"/>
+    <input type="hidden" name="back" th:value="${back}"/>
+    <label class="form-control"><span class="label-text text-xs">Type</span>
+        <input class="input input-bordered input-sm font-mono" name="annotationType" list="annotation-types"
+               th:value="${a} != null ? ${a.annotationType} : ''" placeholder="e.g. LAYOUT_ROW"/></label>
+    <label class="form-control"><span class="label-text text-xs">Title (.Stat layouts: dimension ids, e.g. KREDITNEHMER)</span>
+        <input class="input input-bordered input-sm font-mono" name="title" th:value="${a} != null ? ${a.title} : ''"/></label>
+    <label class="form-control md:col-span-2"><span class="label-text text-xs">Text</span>
+        <textarea class="textarea textarea-bordered textarea-sm" name="text" rows="2" th:text="${a} != null ? ${a.text} : ''"></textarea></label>
+    <label class="form-control"><span class="label-text text-xs">URL (optional)</span>
+        <input class="input input-bordered input-sm" name="url" th:value="${a} != null ? ${a.url} : ''" placeholder="https://..."/></label>
+    <label class="form-control"><span class="label-text text-xs">Id (optional)</span>
+        <input class="input input-bordered input-sm font-mono" name="annotationId" th:value="${a} != null ? ${a.annotationId} : ''"/></label>
+    <div class="md:col-span-2"><button class="btn btn-primary btn-sm" type="submit" th:text="${label}">Add</button></div>
+    <datalist id="annotation-types">
+        <option value="LAYOUT_ROW">dimensions in the rows of the table</option>
+        <option value="LAYOUT_COLUMN">dimensions in the columns</option>
+        <option value="LAYOUT_ROW_SECTION">dimensions as row sections</option>
+        <option value="DEFAULT">pre-selected codes, e.g. FREQ=Q,TIME_PERIOD_END=2026-Q2</option>
+        <option value="NOT_DISPLAYED">hidden dimensions or codes, e.g. FREQ or FREQ=A</option>
+        <option value="LAYOUT_TIME_PERIOD_DESC">latest periods first</option>
+        <option value="ORDER">order of a code</option>
+    </datalist>
+</form>
+</body>
+</html>

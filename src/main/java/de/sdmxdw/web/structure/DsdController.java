@@ -1,5 +1,7 @@
 package de.sdmxdw.web.structure;
 
+import de.sdmxdw.structure.annotation.AnnotationService;
+import de.sdmxdw.structure.annotation.AnnotationTarget;
 import de.sdmxdw.structure.codelist.Codelist;
 import de.sdmxdw.structure.codelist.CodelistService;
 import de.sdmxdw.structure.conceptscheme.ConceptSchemeService;
@@ -26,11 +28,14 @@ public class DsdController {
   private final DataStructureDefinitionService dsdService;
   private final ConceptSchemeService conceptSchemeService;
   private final CodelistService codelistService;
+  private final AnnotationService annotationService;
 
   public DsdController(
       DataStructureDefinitionService dsdService,
       ConceptSchemeService conceptSchemeService,
-      CodelistService codelistService) {
+      CodelistService codelistService,
+      AnnotationService annotationService) {
+    this.annotationService = annotationService;
     this.dsdService = dsdService;
     this.conceptSchemeService = conceptSchemeService;
     this.codelistService = codelistService;
@@ -95,6 +100,7 @@ public class DsdController {
     model.addAttribute("conceptOptions", conceptOptions);
     model.addAttribute("codelists", codelists);
     model.addAttribute("dataTypes", DataType.values());
+    model.addAttribute("annotations", annotationService.find(AnnotationTarget.DSD, id));
     return "structure/dsd-detail";
   }
 

@@ -46,6 +46,10 @@ class ExploreMicrodataFlowPageTest extends AbstractIntegrationTest {
   @Autowired private MicrodataFlowService flowService;
   @Autowired private MicrodataRecordService recordService;
   @Autowired private CodelistService codelistService;
+  @Autowired private de.sdmxdw.structure.category.CategorySchemeService categorySchemeService;
+
+  @Autowired
+  private de.sdmxdw.microdata.MicrodataCategorisationService microdataCategorisationService;
 
   private final RequestPostProcessor oekonom = principal("oe@x", AppUserRole.OEKONOM);
   private final RequestPostProcessor dm = principal("dm@x", AppUserRole.DATENMANAGER);
@@ -276,6 +280,42 @@ class ExploreMicrodataFlowPageTest extends AbstractIntegrationTest {
     mvc.perform(post(base + "/promote").with(dm).with(csrf()))
         .andExpect(status().is3xxRedirection());
     assertThat(body(get(base).with(oekonom))).doesNotContain(">L-1<").contains(">L-9<");
+  }
+
+  @Test
+  void categorySchemePageWithFlowsRelationsAboutAndBreadcrumb() throws Exception {
+    MicrodataFlow flow = flow();
+    String suffix = "SCH" + (++counter) + "_" + System.nanoTime() % 100000;
+    var scheme =
+        asDatenmanager(
+            () -> {
+              var cs =
+                  categorySchemeService.createScheme(
+                      "TST", "CS_" + suffix, "1.0.0", "Loans scheme");
+              cs = categorySchemeService.addCategory(cs.id(), null, "CRED", "Credit");
+              categorySchemeService.updateDescription(cs.id(), "All about **loans**.");
+              Long category = cs.categories().iterator().next().id();
+              microdataCategorisationService.assignFlowToCategory(flow.id(), category);
+              return categorySchemeService.findById(cs.id());
+            });
+    Long category = scheme.categories().iterator().next().id();
+    String base = "/explore/microdata/category-schemes/" + scheme.id();
+
+    assertThat(body(get(base).with(oekonom)))
+        .contains("Loans scheme")
+        .contains("id=\"cat-" + category + "\"")
+        .contains(flow.artefactId())
+        .contains("1 microdata flow(s)");
+    assertThat(body(get(base).param("tab", "relations").with(oekonom)))
+        .contains("id=\"relations-canvas\"")
+        .contains("/js/relations.js")
+        .doesNotContain("closeRelations()\">Close");
+    assertThat(body(get(base).param("tab", "about").with(oekonom)))
+        .contains("<strong>loans</strong>");
+    // the flow's breadcrumb leads to the scheme page and its category
+    assertThat(body(get("/explore/microdata/" + flow.id()).with(oekonom)))
+        .contains("href=\"" + base + "\"")
+        .contains("href=\"" + base + "#cat-" + category + "\"");
   }
 
   @Test
